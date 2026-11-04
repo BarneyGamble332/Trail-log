@@ -323,6 +323,7 @@ canvas.prof{width:100%;height:120px;display:block}
 
     <section class="pane" id="pane-data" role="tabpanel" aria-label="Einstellungen" hidden>
       <h2 class="set-h">Einstellungen</h2>
+      <p class="note" style="margin:-8px 0 14px">Version <span id="verNum">__BUILD__</span></p>
       <div class="stack">
         <button class="btn primary" id="btnZip">Strava-Export (ZIP) laden</button>
         <button class="btn" id="btnFiles">Einzelne GPX-/FIT-/TCX-Dateien</button>
@@ -1547,6 +1548,8 @@ async function saveBlob(blob,name){
   const url=URL.createObjectURL(blob), a=document.createElement('a'); a.href=url; a.download=name;
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),10000);
 }
+
+if($('#verNum').textContent.startsWith('__')) $('#verNum').textContent='Web';
 
 /* ---------- Start ---------- */
 (async()=>{
