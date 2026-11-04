@@ -1,1 +1,69 @@
+name: Android-App bauen
 
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - index.html
+      - .github/workflows/android.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Capacitor-Projekt erzeugen
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          # 1) Web-App ins Capacitor-Projekt
+          mkdir -p www && cp index.html www/index.html
+          npm init -y >/dev/null
+          npm i --no-audit --no-fund @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6 @capacitor/filesystem@6 @capacitor/share@6 @capacitor-community/background-geolocation@1.2.20
+          npx cap init "Trail Log" de.bernhard.traillog --web-dir www
+          npx cap add android
+          npx cap sync android
+          RES=android/app/src/main/res
+          # 2) App-Symbol: gelber Hintergrund, dunkler Berg, roter Punkt
+          sed -i 's/#FFFFFF/#F2C000/' $RES/values/ic_launcher_background.xml
+          convert -size 432x432 xc:none -fill '#1b1f24' -draw "polygon 110,300 185,165 232,238 272,185 322,300" -fill '#d93025' -draw "circle 216,332 216,348" /tmp/fg.png
+          convert -size 432x432 xc:'#F2C000' /tmp/fg.png -composite /tmp/legacy.png
+          for d in mdpi:48:108 hdpi:72:162 xhdpi:96:216 xxhdpi:144:324 xxxhdpi:192:432; do
+            IFS=: read n s f <<<"$d"
+            convert /tmp/fg.png -resize ${f}x${f} $RES/mipmap-$n/ic_launcher_foreground.png
+            convert /tmp/legacy.png -resize ${s}x${s} $RES/mipmap-$n/ic_launcher.png
+            cp $RES/mipmap-$n/ic_launcher.png $RES/mipmap-$n/ic_launcher_round.png
+          done
+          # 3) Versionsnummer hochzaehlen, damit Updates ueber die alte Installation moeglich sind
+          sed -i "s/versionCode 1/versionCode ${RUN_NUMBER:-1}/; s/versionName \"1.0\"/versionName \"1.${RUN_NUMBER:-1}\"/" android/app/build.gradle
+
+      - name: Signaturschluessel einsetzen (gleich bei jedem Build, damit Updates klappen)
+        run: |
+          mkdir -p ~/.android
+          echo 'MIIKZgIBAzCCChAGCSqGSIb3DQEHAaCCCgEEggn9MIIJ+TCCBcAGCSqGSIb3DQEHAaCCBbEEggWtMIIFqTCCBaUGCyqGSIb3DQEMCgECoIIFQDCCBTwwZgYJKoZIhvcNAQUNMFkwOAYJKoZIhvcNAQUMMCsEFJzgA6HRlQr03h5AMBQEz6PlhglxAgInEAIBIDAMBggqhkiG9w0CCQUAMB0GCWCGSAFlAwQBKgQQqVjnW6NTCasApAu614E/xwSCBNCIwqUt0ArFrYmR8oSlpw7hbelNQGMay/dU/Au/IdK2pIFcph1OVexxMqP5TpIFn/Z8hSh78aqi/48N64MXZFR5it5Z6l/l6kEMtVaKjxyAu9QVSpg6z+sXX3BvnAsE+TdgU9V6OlVGXh2pJMRV4SpnotPFrWr431V8iEowQk8U7Q5JP79ovuR7yoywT0CTJ3WNf4LKZkBHL28MaQKfSOzMOKVMqPX9FUMGY2OIP7EDiNWTKyg5L57Ng9/Rer7nYhEsT++EVDZfme1VhkRTIDNLmzADTKjIfsqh5FyKudW82v5RihrFxvFRYBPQ4RCKisx+aIJ8A4jvxoab446hMh/8UKt+kdaL9enMecX3zUx0Wy4xohuvDM+N5M41tSzY5bfDJZ5btBYf8G9Xo5u38YlIIXWfMLH8zwbOxhkqokcEh6Y9+4ios8I825EUGsCaqLFpwC1ijdDIn5LlnORgzVZO9BcxszRM9AL6w+UQU+fe6juweX4/tReBXUOv4vH+JOQSevnWAl9J8u/unqiLZgwg023FeIvW+XyEJHWDY0RPz15MsZOtCJaUjYSyfmGfeIj+DhYwM1PBbfvl3z6cUw6tJA01zPFlkGKw3YWjGIJ6n/WNpeDTJQQdRaAfYWNoTs3ZXjx5TFUXXfxkKB8UEzrY+K2HKAVAhyVkAo125eCNDp14crUsuv3jlHHjoQPIaiPRw/z+tRYkA8QptDRwN7PUSA/v4JwCSNR79PcHmwmzAPL6MfXrP7ITnTojREhaF4OkYNMVJRtixgNGk91ZIBRTK7mjKssHaQcw0QbRrVQwMvY/xgXvyJYZ9Cqj7YeWxztS7EYlc/5z1yfTj0QfUNpoqgjrBAvAvJy1mcri2Crtr70XYi0qv8ox1YrLOIXyfheyjNg9ppkcOnNSB0PMbEjXnJrivcC8YlUM0rU+PrDB0MxoCJp6cggvnOdkrMVoRQbFbwAuXDTF8Iu1XwDil4Lok+1e8L6oX9UagWVBx1UhLeOOHU4nuFnQXW7JAEd19zb99HG45SA2ymGm0qMMT8gUDuam6hpsrlfD0aOy9jS+OOzl/H8xtp6CJjUEGVzyL+MWiwAFD1X4BHTa+ndS5NQ+iz2vulFy9U9FoRWyImwKLBozLj5z12992sCjcF0HtyVhh+fjTCHhT1FrleVhXmqBvvXkVFnTZtEHkYfJ8JW0InbgD7gVAcFdi9de1NgtDjbI3f0qHzMnh7V91h+z/6SMVIovDankm7G4Uf8PTfuBb3OQwbZYrZWhnzEGYxkjq8LGgMq0O1y58J8NlvritRqqcdwHf+ZXTa98IMj/bz0BaxnAJHumPAFWDThU8mDthfKVNl6jk8IGvBH8huWSl7WAn3IkxI7qQmg6i9wujCF4n8jMVDa/cWy4IKaJ3SmUmhCXKPDx2fqkbxbyft98eceOcPx13mIeR4mtHEuJMpOD/2JoHZR7nI2g0cHwuUkYykEOQy4ONSJZzDGTdF/jK+SnOF9oqDbAeteeSLedQ0oDttorOLTL5dKyVC5asnwsXeNH4eDYrRcfWCPHWGrUSu+kPAXGnN9aDc9/Tfn4/wbVI+Q+uj79R9JsWQtWupbZ5Vz4bTdfsBtGcrVu25BPEQM119f0q+7b3PCK+f+lCLy1vzFSMC0GCSqGSIb3DQEJFDEgHh4AYQBuAGQAcgBvAGkAZABkAGUAYgB1AGcAawBlAHkwIQYJKoZIhvcNAQkVMRQEElRpbWUgMTc5MzgxMDYzNzgwNzCCBDEGCSqGSIb3DQEHBqCCBCIwggQeAgEAMIIEFwYJKoZIhvcNAQcBMGYGCSqGSIb3DQEFDTBZMDgGCSqGSIb3DQEFDDArBBRgu4rbePY+T9eBdkXQqAjUke9qLgICJxACASAwDAYIKoZIhvcNAgkFADAdBglghkgBZQMEASoEEF5VmNiE/aEWeIaWfn9jvMGAggOgESq7z+mBNKZ+MkDDU5fy370GsB+bDsYkUhuCN1qcIgawiJFOpZbxTTjJ2tn9+fg3XqSEUDFB4hJGedkG7OiA+lF+ghX/3D27vf/YsFPqFm19eecsY9L8qO6cZRSyjInsBcOv9nFu05HXgcN4lvBcjpx86FpV7ei6aMGYD9afl/Ww1ouA75AnfQYxK/m3fV0Kuh9qTnE400Pa9AWnmr4wbOFlBrOGIctC4xOlmPmtPB6bvfomSIjkVXGaIFT8PJwLS34x61dFHBgH7pi9yuF6H3+d0duwzFzZ07qGJnzG2UxJNwUxpL6e4n0+MOAQ9VE0LasXaOdc1mH+f1F5hrvDHY1O+GErXQAlU3i6beL0DKyFV+z33XS0VT2nz+ICA5MdUWxKaryXYbyRb63+0OO9zoOz8lq8x4mBnbnny8YAUjkb0K6vlku1pyMdLRoUZ6k0J8S9z5Zj874yMAz5i6/0e95vPS8jaODOhVmkvr9fT359zAe2U5qwuMF1LOJu75V/WS8scZLCk/H7PdVjM9tlPva5L/9G77051BVemPO6L8Ezso+PFp9f6x8kFpgs72va1/DBv/WdHMzJMG1PNiNDuSYlAD58sJKyx5kaB1psSQzr4CA5tNna3ZonSrzs7TFIqiCYRfoZ4VgbG4lOXzNwWexe0HJCCYoXmjwEW6vyMhxTUqfFCGLqOUmATyVURzmQMgFZbC2uFNVwLM2cDqQJOrx134wUDo8BN2ya0pvyyz4dpljWptuboAxpI4LznoWYriKvY1KcAHJOUHIByFxey15oXgUfNvTyCKkiALd0W/6vdpEtLicqpWsatIwFIzY1I0ecIVWvScp5NcF7BktZx8B8PbHHVQTNSGV6m1FsiJ+PB2vNS629DheeHfdP+NcSVe2CcwXuGjHrwxOdi2MkoEezrimFXKFdSkElOkNkZYg3C3K7qMJJtEzUjVGXC369PwXB+BNZr63UT9bqwQUcHoNzkyc9VcdR7sCQOWFjm7Yu4GY1r8IaqN3UONHYRMfWfhjJC690uWzKFk++ZLHyIaQCf/pdoOhZojN66kOM5+0U/dujBBbJL+sKisDDbXNfUnuZhYmUZBx4C/v4fnrx9yWjVwdJb9qgfjyCMJuvc90tfX3g5l7oAeQvuM0sZ9q7eO/uE/e7Ibz4qYiugj74mCgNW4xZq2I5B2+hl028CzCgqedYU/aWccRkSSipesSxAOkiwRm17PAVVMSOVZVwmjBNMDEwDQYJYIZIAWUDBAIBBQAEIN2hGLw0xaxfFdk1TDhM2PcDQ6q3V4xhsZaiPWWxzOb3BBQ+VEeDCBSsczQ2aoKD6WlZfSnDhAICJxA=' | base64 -d > ~/.android/debug.keystore
+
+      - name: APK bauen
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: APK als Download bereitstellen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk Trail-Log.apk
+          gh release delete apk-latest --yes --cleanup-tag || true
+          gh release create apk-latest Trail-Log.apk --title "Trail Log (Android)" --notes "Neueste Android-App. Datei Trail-Log.apk laden und installieren."
