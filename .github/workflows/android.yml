@@ -20,6 +20,10 @@ jobs:
         with:
           node-version: 20
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -40,14 +44,20 @@ jobs:
           RES=android/app/src/main/res
           # 2) App-Symbol: gelber Hintergrund, dunkler Berg, roter Punkt
           sed -i 's/#FFFFFF/#F2C000/' $RES/values/ic_launcher_background.xml
-          convert -size 432x432 xc:none -fill '#1b1f24' -draw "polygon 110,300 185,165 232,238 272,185 322,300" -fill '#d93025' -draw "circle 216,332 216,348" /tmp/fg.png
-          convert -size 432x432 xc:'#F2C000' /tmp/fg.png -composite /tmp/legacy.png
-          for d in mdpi:48:108 hdpi:72:162 xhdpi:96:216 xxhdpi:144:324 xxxhdpi:192:432; do
-            IFS=: read n s f <<<"$d"
-            convert /tmp/fg.png -resize ${f}x${f} $RES/mipmap-$n/ic_launcher_foreground.png
-            convert /tmp/legacy.png -resize ${s}x${s} $RES/mipmap-$n/ic_launcher.png
-            cp $RES/mipmap-$n/ic_launcher.png $RES/mipmap-$n/ic_launcher_round.png
-          done
+          pip install --quiet pillow
+          python3 - <<'PY'
+          from PIL import Image, ImageDraw
+          S=432
+          fg=Image.new('RGBA',(S,S),(0,0,0,0)); d=ImageDraw.Draw(fg)
+          d.polygon([(110,300),(185,165),(232,238),(272,185),(322,300)],fill='#1b1f24')
+          d.ellipse([200,316,232,348],fill='#d93025')
+          bg=Image.new('RGBA',(S,S),'#F2C000'); bg.alpha_composite(fg)
+          res='android/app/src/main/res/'
+          for n,s,f in [('mdpi',48,108),('hdpi',72,162),('xhdpi',96,216),('xxhdpi',144,324),('xxxhdpi',192,432)]:
+              fg.resize((f,f),Image.LANCZOS).save(res+'mipmap-%s/ic_launcher_foreground.png'%n)
+              ic=bg.resize((s,s),Image.LANCZOS)
+              ic.save(res+'mipmap-%s/ic_launcher.png'%n); ic.save(res+'mipmap-%s/ic_launcher_round.png'%n)
+          PY
           # 3) Versionsnummer hochzaehlen, damit Updates ueber die alte Installation moeglich sind
           sed -i "s/versionCode 1/versionCode ${RUN_NUMBER:-1}/; s/versionName \"1.0\"/versionName \"1.${RUN_NUMBER:-1}\"/" android/app/build.gradle
 
