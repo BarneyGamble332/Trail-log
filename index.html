@@ -216,7 +216,7 @@ canvas.prof{width:100%;height:120px;display:block}
 .set-h{font:700 20px var(--f-display);letter-spacing:.04em;text-transform:uppercase;margin:4px 0 14px}
 .rec-go{display:flex;align-items:center;justify-content:center;gap:12px;width:100%;padding:20px;border:0;border-radius:16px;background:#d93025;color:#fff;font:700 20px var(--f-display);letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
 .rec-go .rdot{width:14px;height:14px;border-radius:50%;background:#fff}
-.rec-big{display:flex;align-items:baseline;gap:14px;font:600 32px var(--f-num)}
+.rec-big{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 16px;font:600 32px var(--f-num)}
 .rec-big .rdot{align-self:center;width:14px;height:14px;border-radius:50%;background:#d93025;animation:pulse 1.2s infinite}
 .rec-big span:last-child{color:var(--muted);font-size:22px}
 @keyframes pulse{50%{opacity:.25}}
@@ -234,7 +234,7 @@ canvas.prof{width:100%;height:120px;display:block}
 <div class="brand">
   <div class="sign">Trail Log</div>
   <div class="loading" id="loadChip" hidden>Lade Gipfel &amp; Almen …</div>
-  <div class="rec-hud" id="recHud" hidden><span class="rdot"></span><b id="rhD">0,0 km</b><span id="rhT">0:00</span><button class="ic" id="rhFollow" hidden aria-label="Karte folgt wieder der Position">⌖</button><button id="rhStop">Stopp</button></div>
+  <div class="rec-hud" id="recHud" hidden><span class="rdot"></span><b id="rhD">0,0 km</b><b id="rhH">0 Hm</b><span id="rhT">0:00</span><button class="ic" id="rhFollow" hidden aria-label="Karte folgt wieder der Position">⌖</button><button id="rhStop">Stopp</button></div>
 </div>
 
 <aside id="sheet">
@@ -252,13 +252,13 @@ canvas.prof{width:100%;height:120px;display:block}
     <section class="pane" id="pane-rec" role="tabpanel" aria-labelledby="tab-rec">
       <div class="stack recp" id="recIdle">
         <div><h3>Sportart</h3>
-          <select class="sel" id="rcType" style="width:100%"><option value="mountainbikeride">Mountainbike</option><option value="emountainbikeride">E-MTB</option><option value="ride">Radfahrt</option><option value="hike">Wandern</option><option value="run">Laufen</option></select></div>
+          <select class="sel" id="rcType" style="width:100%"><option value="mountainbikeride">Mountainbike</option><option value="emountainbikeride">E-MTB</option><option value="ride">Radfahrt</option><option value="hike">Wandern</option><option value="run">Laufen</option><option value="drive">Auto</option></select></div>
         <p class="note warn" id="recWarn" hidden></p>
         <button class="rec-go" id="rcGo"><span class="rdot"></span>Aufnahme starten</button>
         <p class="note">Beim ersten Start fragt der Browser nach dem Standort. Den Bildschirm währenddessen angeschaltet lassen, sonst kann das GPS pausieren.</p>
       </div>
       <div class="stack recp" id="recLive" hidden>
-        <div class="rec-big"><span class="rdot"></span><b id="rpD">0,0 km</b><span id="rpT">0:00</span></div>
+        <div class="rec-big"><span class="rdot"></span><b id="rpD">0,0 km</b><b id="rpH">0 Hm</b><span id="rpT">0:00</span></div>
         <button class="btn primary" id="rpStop">Aufnahme beenden und speichern</button>
         <button class="btn" id="rpDrop">Verwerfen</button>
       </div>
@@ -408,7 +408,7 @@ const TYPES = {ride:'Radfahrt',mountainbikeride:'Mountainbike',ebikeride:'E-Bike
   virtualride:'Rad virtuell',hike:'Wandern',walk:'Spaziergang',run:'Laufen',trailrun:'Trailrun',virtualrun:'Laufen virtuell',
   backcountryski:'Skitour',alpineski:'Ski alpin',nordicski:'Langlauf',snowshoe:'Schneeschuh',rockclimbing:'Klettern',
   swim:'Schwimmen',kayaking:'Kajak',canoeing:'Kanu',standuppaddling:'SUP',inlineskate:'Inline',iceskate:'Eislaufen',
-  workout:'Training',other:'Sonstiges'};
+  workout:'Training',drive:'Auto',other:'Sonstiges'};
 const ALIAS = {cycling:'ride',biking:'ride',bike:'ride',hiking:'hike',running:'run',walking:'walk',mountainbiking:'mountainbikeride',
   mtb:'mountainbikeride',alpineskiing:'alpineski',backcountryskiing:'backcountryski',crosscountryskiing:'nordicski',snowshoeing:'snowshoe',
   '1':'ride','4':'hike','9':'run','10':'walk'};
@@ -1385,7 +1385,7 @@ document.addEventListener('click',e=>{ const li=e.target.closest('.leaflet-popup
 window.addEventListener('resize',()=>{ if(TOUR.sel){ const a=byId.get(TOUR.sel); if(a) drawProfile($('#prof'),a); } });
 
 /* ---------- Aufnahme ---------- */
-const REC={on:false,pts:[],t0:0,dist:0,watch:null,wl:null,tick:null,follow:true,line:null,dot:null,errT:0,rej:0,type:ls.get('rec.type','mountainbikeride')};
+const REC={on:false,pts:[],t0:0,dist:0,watch:null,wl:null,tick:null,follow:true,line:null,dot:null,errT:0,rej:0,gain:0,ref:null,ab:[],type:ls.get('rec.type','mountainbikeride')};
 $('#rcType').value=REC.type;
 function recHttps(){ return location.protocol==='https:'||/^(localhost|127\.0\.0\.1)$/.test(location.hostname); }
 if(!recHttps()) setTimeout(()=>recWarn(),0);
@@ -1400,7 +1400,7 @@ async function recStart(){
   if(!recHttps()||!navigator.geolocation){ recWarn(); return; }
   if(navigator.permissions){ try{ const st=await navigator.permissions.query({name:'geolocation'}); if(st.state==='denied'){ recWarn('denied'); return; } }catch(e){} }
   REC.type=$('#rcType').value; ls.set('rec.type',REC.type);
-  Object.assign(REC,{on:true,pts:[],t0:Date.now(),dist:0,follow:true,dot:null,rej:0});
+  Object.assign(REC,{on:true,pts:[],t0:Date.now(),dist:0,follow:true,dot:null,rej:0,gain:0,ref:null,ab:[]});
   recLayer.clearLayers(); selLayer.clearLayers(); TOUR.sel=null; renderTours();
   REC.line=L.polyline([],{pane:'route',interactive:false,color:'#1b7fe8',weight:5,lineJoin:'round',lineCap:'round'}).addTo(recLayer);
   try{ REC.wl=await navigator.wakeLock.request('screen'); }catch(e){}
@@ -1408,7 +1408,7 @@ async function recStart(){
   document.body.classList.add('recording'); recUI(); $('#recHud').hidden=false; $('#rhFollow').hidden=true;
   sheet.classList.remove('open'); recTick(); REC.tick=setInterval(recTick,1000);
 }
-function recTick(){ if(!REC.on) return; const d=fmt1.format(REC.dist/1000)+' km', t=fmtClock((Date.now()-REC.t0)/1000); $('#rhD').textContent=d; $('#rhT').textContent=t; $('#rpD').textContent=d; $('#rpT').textContent=t; }
+function recTick(){ if(!REC.on) return; const h=fmt0.format(REC.gain)+' Hm', d=fmt1.format(REC.dist/1000)+' km', t=fmtClock((Date.now()-REC.t0)/1000); $('#rhD').textContent=d; $('#rhT').textContent=t; $('#rhH').textContent=h; $('#rpH').textContent=h; $('#rpD').textContent=d; $('#rpT').textContent=t; }
 function recPos(p){
   if(!REC.on) return;
   const c=p.coords; if(c.accuracy>40) return;
@@ -1422,6 +1422,11 @@ function recPos(p){
     REC.rej=0; if(s<600) REC.dist+=s;
   }
   REC.pts.push(n);
+  if(n[2]!=null){ // Hoehenmeter live: Mittel der letzten 3 Hoehen, Schwelle 4 m gegen GPS-Rauschen
+    REC.ab.push(n[2]); if(REC.ab.length>3) REC.ab.shift();
+    const el=REC.ab.reduce((x,y)=>x+y,0)/REC.ab.length;
+    if(REC.ref===null) REC.ref=el; else if(el-REC.ref>4){ REC.gain+=el-REC.ref; REC.ref=el; } else if(REC.ref-el>4) REC.ref=el;
+  }
   const ll=[n[0],n[1]]; REC.line.addLatLng(ll);
   if(!REC.dot) REC.dot=L.circleMarker(ll,{pane:'route',interactive:false,radius:8,color:'#fff',weight:3,fillColor:'#1b7fe8',fillOpacity:1}).addTo(recLayer); else REC.dot.setLatLng(ll);
   if(REC.follow){ if(REC.pts.length===1) map.setView(ll,Math.max(map.getZoom(),16)); else if(!map.getBounds().pad(-0.3).contains(ll)) map.panTo(ll); }
@@ -1433,7 +1438,7 @@ function recErr(e){
 }
 async function recStop(discard){
   try{ navigator.geolocation.clearWatch(REC.watch); }catch(e){} clearInterval(REC.tick); try{ REC.wl&&REC.wl.release(); }catch(e){}
-  const pts=REC.pts, type=REC.type, t0=REC.t0; REC.on=false; REC.pts=[]; REC.dist=0; REC.wl=null;
+  const pts=REC.pts, type=REC.type, t0=REC.t0; REC.on=false; REC.pts=[]; REC.dist=0; REC.gain=0; REC.wl=null;
   document.body.classList.remove('recording'); recUI(); $('#recHud').hidden=true; recLayer.clearLayers(); ls.set('rec',null);
   if(!discard) await saveRecording(pts,type,t0);
 }
