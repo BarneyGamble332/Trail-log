@@ -255,7 +255,6 @@ canvas.prof{width:100%;height:120px;display:block}
           <select class="sel" id="rcType" style="width:100%"><option value="mountainbikeride">Mountainbike</option><option value="emountainbikeride">E-MTB</option><option value="ride">Radfahrt</option><option value="hike">Wandern</option><option value="run">Laufen</option><option value="drive">Auto</option></select></div>
         <p class="note warn" id="recWarn" hidden></p>
         <button class="rec-go" id="rcGo"><span class="rdot"></span>Aufnahme starten</button>
-        <p class="note">Beim ersten Start fragt der Browser nach dem Standort. Den Bildschirm währenddessen angeschaltet lassen, sonst kann das GPS pausieren.</p>
       </div>
       <div class="stack recp" id="recLive" hidden>
         <div class="rec-big"><span class="rdot"></span><b id="rpD">0,0 km</b><b id="rpH">0 Hm</b><span id="rpT">0:00</span></div>
@@ -1386,9 +1385,16 @@ document.addEventListener('click',e=>{ const li=e.target.closest('.leaflet-popup
 window.addEventListener('resize',()=>{ if(TOUR.sel){ const a=byId.get(TOUR.sel); if(a) drawProfile($('#prof'),a); } });
 
 /* ---------- Aufnahme ---------- */
+window.addEventListener('error',ev=>{ if(window.Capacitor&&Capacitor.isNativePlatform&&Capacitor.isNativePlatform()) toast('Fehler: '+String(ev.message||'').slice(0,100)+' (Zeile '+ev.lineno+')',9000); });
+/* Knöpfe zuerst verdrahten: sie sollen auch dann gehen, wenn weiter unten etwas schiefläuft */
+$('#rcGo').onclick=recStart;
+$('#rhStop').onclick=()=>recStop(false); $('#rpStop').onclick=()=>recStop(false);
+$('#rpDrop').onclick=()=>{ if($('#rpDrop').dataset.arm){ delete $('#rpDrop').dataset.arm; $('#rpDrop').textContent='Verwerfen'; recStop(true); } else { $('#rpDrop').dataset.arm=1; $('#rpDrop').textContent='Wirklich verwerfen?'; setTimeout(()=>{ delete $('#rpDrop').dataset.arm; $('#rpDrop').textContent='Verwerfen'; },3000); } };
+$('#btnSet').onclick=()=>{ const on=!$('#pane-data').hidden; if(on&&sheet.classList.contains('open')&&window.innerWidth<900){ sheet.classList.remove('open'); } else { openTab('data'); sheet.classList.add('open'); } };
 /* Native Android-App (Capacitor): Standort laeuft als Vordergrunddienst weiter, auch bei ausgeschaltetem Bildschirm */
 const NATIVE=!!(window.Capacitor&&Capacitor.isNativePlatform&&Capacitor.isNativePlatform());
-const BG=NATIVE?Capacitor.registerPlugin('BackgroundGeolocation'):null;
+let BG=null;
+if(NATIVE){ try{ BG=Capacitor.registerPlugin?Capacitor.registerPlugin('BackgroundGeolocation'):(Capacitor.Plugins&&Capacitor.Plugins.BackgroundGeolocation); }catch(e){ BG=(Capacitor.Plugins&&Capacitor.Plugins.BackgroundGeolocation)||null; } }
 const REC={bgId:null,on:false,pts:[],t0:0,dist:0,watch:null,wl:null,tick:null,follow:true,line:null,dot:null,errT:0,rej:0,gain:0,ref:null,ab:[],type:ls.get('rec.type','mountainbikeride')};
 $('#rcType').value=REC.type;
 function recHttps(){ return location.protocol==='https:'||/^(localhost|127\.0\.0\.1)$/.test(location.hostname); }
@@ -1410,12 +1416,13 @@ async function recStart(){
   try{ REC.wl=await navigator.wakeLock.request('screen'); }catch(e){}
   if(NATIVE){
     try{
+      if(!BG) throw new Error('Standort-Plugin fehlt');
       REC.bgId=await BG.addWatcher({backgroundTitle:'Trail Log',backgroundMessage:'Aufzeichnung läuft',requestPermissions:true,stale:false,distanceFilter:0},(l,err)=>{
         if(err){ if(err.code==='NOT_AUTHORIZED'){ toast('Standortzugriff fehlt. Bitte in den App-Einstellungen „Standort“ erlauben.',7000); try{ BG.openSettings(); }catch(e){} recStop(true); } else recErr(err); return; }
         if(!l) return;
         recPos({coords:{latitude:l.latitude,longitude:l.longitude,altitude:l.altitude==null?null:l.altitude,accuracy:l.accuracy},timestamp:l.time||Date.now()});
       });
-    }catch(e){ toast('Die Standort-Aufzeichnung konnte nicht gestartet werden.',6000); recStop(true); return; }
+    }catch(e){ toast('Aufzeichnung konnte nicht starten: '+String(e&&e.message||e).slice(0,120),8000); recStop(true); return; }
   } else REC.watch=navigator.geolocation.watchPosition(recPos,recErr,{enableHighAccuracy:true,maximumAge:1000,timeout:30000});
   document.body.classList.add('recording'); recUI(); $('#recHud').hidden=false; $('#rhFollow').hidden=true;
   sheet.classList.remove('open'); recTick(); REC.tick=setInterval(recTick,1000);
@@ -1470,10 +1477,6 @@ function restoreCheck(){
 }
 $('#restSave').onclick=async()=>{ $('#restDlg').hidden=true; const p=restP; restP=null; ls.set('rec',null); if(p) await saveRecording(p.pts,p.type,p.t0); };
 $('#restDrop').onclick=()=>{ $('#restDlg').hidden=true; restP=null; ls.set('rec',null); };
-$('#rcGo').onclick=recStart;
-$('#rhStop').onclick=()=>recStop(false); $('#rpStop').onclick=()=>recStop(false);
-$('#rpDrop').onclick=()=>{ if($('#rpDrop').dataset.arm){ delete $('#rpDrop').dataset.arm; $('#rpDrop').textContent='Verwerfen'; recStop(true); } else { $('#rpDrop').dataset.arm=1; $('#rpDrop').textContent='Wirklich verwerfen?'; setTimeout(()=>{ delete $('#rpDrop').dataset.arm; $('#rpDrop').textContent='Verwerfen'; },3000); } };
-$('#btnSet').onclick=()=>{ const on=!$('#pane-data').hidden; if(on&&sheet.classList.contains('open')&&window.innerWidth<900){ sheet.classList.remove('open'); } else { openTab('data'); sheet.classList.add('open'); } };
 $('#rhFollow').onclick=()=>{ REC.follow=true; $('#rhFollow').hidden=true; const q=REC.pts[REC.pts.length-1]; if(q) map.setView([q[0],q[1]],Math.max(map.getZoom(),16)); };
 map.on('dragstart',()=>{ if(REC.on){ REC.follow=false; $('#rhFollow').hidden=false; } });
 document.addEventListener('visibilitychange',async()=>{ if(REC.on&&document.visibilityState==='visible'){ try{ REC.wl=await navigator.wakeLock.request('screen'); }catch(e){} } });
