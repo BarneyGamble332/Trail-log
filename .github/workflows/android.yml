@@ -6,7 +6,6 @@ on:
     paths:
       - index.html
       - .github/workflows/android.yml
-      - karte/fonts/**
 
 permissions:
   contents: write
@@ -37,17 +36,6 @@ jobs:
           set -euo pipefail
           # 1) Web-App ins Capacitor-Projekt
           mkdir -p www && sed "s/__BUILD__/1.${RUN_NUMBER:-1}/" index.html > www/index.html
-          # Bibliotheken und Kartenschriften in die App packen: sie startet dann ohne Netz
-          # und kann die heruntergeladene MTB-Karte komplett offline zeichnen
-          mkdir -p libs
-          (cd libs && npm init -y >/dev/null && npm i --no-audit --no-fund leaflet@1.9.4 maplibre-gl@5.24.0 @maplibre/maplibre-gl-leaflet@0.1.4 pmtiles@4.5.0 @zip.js/zip.js@2.7.52 >/dev/null)
-          for p in leaflet@1.9.4 maplibre-gl@5.24.0 @maplibre/maplibre-gl-leaflet@0.1.4 pmtiles@4.5.0 @zip.js/zip.js@2.7.52; do
-            mkdir -p "www/lib/npm/$p" && cp -r "libs/node_modules/${p%@*}/dist" "www/lib/npm/$p/"
-          done
-          sed -i 's#https://cdn.jsdelivr.net/npm/#lib/npm/#g; s#https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/#lib/npm/leaflet@1.9.4/dist/#g' www/index.html
-          ! grep -n -E 'https://(cdn\.jsdelivr\.net|cdnjs\.cloudflare\.com)' www/index.html
-          mkdir -p www/karte && cp -r karte/fonts www/karte/
-          rm -rf libs
           npm init -y >/dev/null
           npm i --no-audit --no-fund @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6 @capacitor/filesystem@6 @capacitor/share@6 @capacitor-community/background-geolocation@1.2.20
           npx cap init "Trail Log" de.bernhard.traillog --web-dir www
@@ -149,10 +137,10 @@ jobs:
               public void update(PluginCall call) {
                   boolean running = call.getBoolean("running", false);
                   double start = call.getDouble("start", 0.0);
-                  String dist = call.getString("dist", "");
-                  String gain = call.getString("gain", "");
-                  String sub = call.getString("sub", "");
-                  TrailWidgetProvider.save(getContext(), running, (long) start, dist, gain, sub);
+                  TrailWidgetProvider.save(getContext(), running, (long) start,
+                      call.getString("dist", "0,0"), call.getString("gain", "0"),
+                      call.getString("m", ""), call.getString("mt", "–"),
+                      call.getString("mk", "–"), call.getString("mh", "–"));
                   call.resolve();
               }
           }
@@ -175,13 +163,17 @@ jobs:
           public class TrailWidgetProvider extends AppWidgetProvider {
               static final String PREF = "tlwidget";
 
-              static void save(Context c, boolean running, long start, String dist, String gain, String sub) {
+              static void save(Context c, boolean running, long start, String dist, String gain,
+                               String month, String tours, String km, String hm) {
                   c.getSharedPreferences(PREF, Context.MODE_PRIVATE).edit()
                       .putBoolean("run", running)
                       .putLong("start", start)
                       .putString("dist", dist)
                       .putString("gain", gain)
-                      .putString("sub", sub)
+                      .putString("m", month)
+                      .putString("mt", tours)
+                      .putString("mk", km)
+                      .putString("mh", hm)
                       .putLong("ts", System.currentTimeMillis())
                       .apply();
                   refresh(c);
@@ -209,22 +201,34 @@ jobs:
               static RemoteViews build(Context c) {
                   SharedPreferences p = c.getSharedPreferences(PREF, Context.MODE_PRIVATE);
                   long now = System.currentTimeMillis();
-                  // Laeuft die App nicht mehr (Absturz), zeigt das Widget nach 5 Minuten wieder "bereit".
-                  boolean run = p.getBoolean("run", false) && now - p.getLong("ts", 0) < 5 * 60 * 1000;
+                  // Laeuft die App nicht mehr (Absturz), zeigt das Widget nach 10 Minuten wieder "bereit".
+                  boolean run = p.getBoolean("run", false) && now - p.getLong("ts", 0) < 10 * 60 * 1000;
                   RemoteViews v = new RemoteViews(c.getPackageName(), R.layout.widget_tl);
                   v.setOnClickPendingIntent(R.id.w_root, act(c, "open", 1));
                   if (run) {
                       v.setViewVisibility(R.id.w_idle, View.GONE);
                       v.setViewVisibility(R.id.w_run, View.VISIBLE);
+                      v.setViewVisibility(R.id.w_start, View.GONE);
+                      v.setViewVisibility(R.id.w_stop, View.VISIBLE);
+                      v.setTextViewText(R.id.w_head, "\u25CF  AUFNAHME L\u00C4UFT");
+                      v.setTextColor(R.id.w_head, 0xFFFF6B5B);
                       long start = p.getLong("start", now);
-                      v.setChronometer(R.id.w_time, SystemClock.elapsedRealtime() - (now - start), null, true);
-                      v.setTextViewText(R.id.w_dist, p.getString("dist", ""));
-                      v.setTextViewText(R.id.w_gain, p.getString("gain", ""));
+                      long elapsed = Math.max(0, now - start);
+                      v.setChronometer(R.id.w_time, SystemClock.elapsedRealtime() - elapsed, null, true);
+                      v.setTextViewText(R.id.w_dist, p.getString("dist", "0,0"));
+                      v.setTextViewText(R.id.w_gain, p.getString("gain", "0"));
                       v.setOnClickPendingIntent(R.id.w_stop, act(c, "stop", 3));
                   } else {
                       v.setViewVisibility(R.id.w_run, View.GONE);
                       v.setViewVisibility(R.id.w_idle, View.VISIBLE);
-                      v.setTextViewText(R.id.w_sub, p.getString("sub", "Bereit zur Aufnahme"));
+                      v.setViewVisibility(R.id.w_stop, View.GONE);
+                      v.setViewVisibility(R.id.w_start, View.VISIBLE);
+                      String m = p.getString("m", "");
+                      v.setTextViewText(R.id.w_head, m.isEmpty() ? "TRAIL LOG" : "TRAIL LOG  \u00B7  " + m);
+                      v.setTextColor(R.id.w_head, 0xFFF2C000);
+                      v.setTextViewText(R.id.w_n1, p.getString("mt", "\u2013"));
+                      v.setTextViewText(R.id.w_n2, p.getString("mk", "\u2013"));
+                      v.setTextViewText(R.id.w_n3, p.getString("mh", "\u2013"));
                       v.setOnClickPendingIntent(R.id.w_start, act(c, "start", 2));
                   }
                   return v;
@@ -238,99 +242,232 @@ jobs:
               android:id="@+id/w_root"
               android:layout_width="match_parent"
               android:layout_height="match_parent"
-              android:orientation="vertical"
-              android:padding="12dp"
-              android:background="@drawable/widget_bg">
-
-              <TextView
-                  android:layout_width="wrap_content"
-                  android:layout_height="wrap_content"
-                  android:text="TRAIL LOG"
-                  android:textColor="#F2C000"
-                  android:textSize="11sp"
-                  android:textStyle="bold" />
+              android:background="@drawable/widget_bg"
+              android:gravity="center_vertical"
+              android:orientation="horizontal"
+              android:padding="14dp">
 
               <LinearLayout
-                  android:id="@+id/w_idle"
-                  android:layout_width="match_parent"
-                  android:layout_height="0dp"
+                  android:layout_width="0dp"
+                  android:layout_height="match_parent"
                   android:layout_weight="1"
                   android:gravity="center_vertical"
                   android:orientation="vertical">
 
                   <TextView
-                      android:id="@+id/w_sub"
-                      android:layout_width="match_parent"
+                      android:id="@+id/w_head"
+                      android:layout_width="wrap_content"
                       android:layout_height="wrap_content"
-                      android:layout_marginBottom="8dp"
-                      android:maxLines="2"
-                      android:textColor="#FFFFFF"
-                      android:textSize="14sp" />
-
-                  <TextView
-                      android:id="@+id/w_start"
-                      android:layout_width="match_parent"
-                      android:layout_height="wrap_content"
-                      android:background="@drawable/widget_btn"
-                      android:gravity="center"
-                      android:padding="10dp"
-                      android:text="Aufnahme starten"
-                      android:textColor="#FFFFFF"
-                      android:textSize="16sp"
+                      android:includeFontPadding="false"
+                      android:letterSpacing="0.12"
+                      android:text="TRAIL LOG"
+                      android:textColor="#F2C000"
+                      android:textSize="11sp"
                       android:textStyle="bold" />
-              </LinearLayout>
-
-              <LinearLayout
-                  android:id="@+id/w_run"
-                  android:layout_width="match_parent"
-                  android:layout_height="0dp"
-                  android:layout_weight="1"
-                  android:gravity="center_vertical"
-                  android:orientation="horizontal"
-                  android:visibility="gone">
 
                   <LinearLayout
-                      android:layout_width="0dp"
+                      android:id="@+id/w_idle"
+                      android:layout_width="wrap_content"
                       android:layout_height="wrap_content"
-                      android:layout_weight="1"
-                      android:orientation="vertical">
+                      android:layout_marginTop="10dp"
+                      android:orientation="horizontal">
+                      <LinearLayout
+                          android:layout_width="wrap_content"
+                          android:layout_height="wrap_content"
+                          android:layout_marginEnd="18dp"
+                          android:orientation="vertical">
+                          <TextView
+                              android:id="@+id/w_n1"
+                              android:layout_width="wrap_content"
+                              android:layout_height="wrap_content"
+                              android:fontFamily="sans-serif-medium"
+                              android:includeFontPadding="false"
+                              android:text="0"
+                              android:textColor="#F4F6F7"
+                              android:textSize="22sp" />
+                          <TextView
+                              android:layout_width="wrap_content"
+                              android:layout_height="wrap_content"
+                              android:layout_marginTop="2dp"
+                              android:includeFontPadding="false"
+                              android:letterSpacing="0.08"
+                              android:text="TOUREN"
+                              android:textColor="#8E99A1"
+                              android:textSize="10sp" />
+                      </LinearLayout>
+                      <LinearLayout
+                          android:layout_width="wrap_content"
+                          android:layout_height="wrap_content"
+                          android:layout_marginEnd="18dp"
+                          android:orientation="vertical">
+                          <TextView
+                              android:id="@+id/w_n2"
+                              android:layout_width="wrap_content"
+                              android:layout_height="wrap_content"
+                              android:fontFamily="sans-serif-medium"
+                              android:includeFontPadding="false"
+                              android:text="0"
+                              android:textColor="#F4F6F7"
+                              android:textSize="22sp" />
+                          <TextView
+                              android:layout_width="wrap_content"
+                              android:layout_height="wrap_content"
+                              android:layout_marginTop="2dp"
+                              android:includeFontPadding="false"
+                              android:letterSpacing="0.08"
+                              android:text="KM"
+                              android:textColor="#8E99A1"
+                              android:textSize="10sp" />
+                      </LinearLayout>
+                      <LinearLayout
+                          android:layout_width="wrap_content"
+                          android:layout_height="wrap_content"
+                          android:layout_marginEnd="18dp"
+                          android:orientation="vertical">
+                          <TextView
+                              android:id="@+id/w_n3"
+                              android:layout_width="wrap_content"
+                              android:layout_height="wrap_content"
+                              android:fontFamily="sans-serif-medium"
+                              android:includeFontPadding="false"
+                              android:text="0"
+                              android:textColor="#F4F6F7"
+                              android:textSize="22sp" />
+                          <TextView
+                              android:layout_width="wrap_content"
+                              android:layout_height="wrap_content"
+                              android:layout_marginTop="2dp"
+                              android:includeFontPadding="false"
+                              android:letterSpacing="0.08"
+                              android:text="HM"
+                              android:textColor="#8E99A1"
+                              android:textSize="10sp" />
+                      </LinearLayout>
+                  </LinearLayout>
+
+                  <LinearLayout
+                      android:id="@+id/w_run"
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:orientation="vertical"
+                      android:visibility="gone">
 
                       <Chronometer
                           android:id="@+id/w_time"
                           android:layout_width="wrap_content"
                           android:layout_height="wrap_content"
+                          android:fontFamily="sans-serif-medium"
+                          android:includeFontPadding="false"
                           android:textColor="#FFFFFF"
-                          android:textSize="30sp"
-                          android:textStyle="bold" />
+                          android:textSize="38sp" />
 
-                      <TextView
-                          android:id="@+id/w_dist"
+                      <LinearLayout
                           android:layout_width="wrap_content"
                           android:layout_height="wrap_content"
-                          android:textColor="#FFFFFF"
-                          android:textSize="16sp" />
-
-                      <TextView
-                          android:id="@+id/w_gain"
+                          android:layout_marginTop="6dp"
+                          android:orientation="horizontal">
+                      <LinearLayout
                           android:layout_width="wrap_content"
                           android:layout_height="wrap_content"
-                          android:textColor="#BBBBBB"
-                          android:textSize="14sp" />
+                          android:layout_marginEnd="18dp"
+                          android:orientation="vertical">
+                          <TextView
+                              android:id="@+id/w_dist"
+                              android:layout_width="wrap_content"
+                              android:layout_height="wrap_content"
+                              android:fontFamily="sans-serif-medium"
+                              android:includeFontPadding="false"
+                              android:text="0"
+                              android:textColor="#F4F6F7"
+                              android:textSize="18sp" />
+                          <TextView
+                              android:layout_width="wrap_content"
+                              android:layout_height="wrap_content"
+                              android:layout_marginTop="2dp"
+                              android:includeFontPadding="false"
+                              android:letterSpacing="0.08"
+                              android:text="KM"
+                              android:textColor="#8E99A1"
+                              android:textSize="10sp" />
+                      </LinearLayout>
+                      <LinearLayout
+                          android:layout_width="wrap_content"
+                          android:layout_height="wrap_content"
+                          android:layout_marginEnd="18dp"
+                          android:orientation="vertical">
+                          <TextView
+                              android:id="@+id/w_gain"
+                              android:layout_width="wrap_content"
+                              android:layout_height="wrap_content"
+                              android:fontFamily="sans-serif-medium"
+                              android:includeFontPadding="false"
+                              android:text="0"
+                              android:textColor="#F4F6F7"
+                              android:textSize="18sp" />
+                          <TextView
+                              android:layout_width="wrap_content"
+                              android:layout_height="wrap_content"
+                              android:layout_marginTop="2dp"
+                              android:includeFontPadding="false"
+                              android:letterSpacing="0.08"
+                              android:text="HM"
+                              android:textColor="#8E99A1"
+                              android:textSize="10sp" />
+                      </LinearLayout>
+                      </LinearLayout>
                   </LinearLayout>
+              </LinearLayout>
 
+              <LinearLayout
+                  android:id="@+id/w_start"
+                  android:layout_width="84dp"
+                  android:layout_height="match_parent"
+                  android:background="@drawable/widget_btn_start"
+                  android:gravity="center"
+                  android:orientation="vertical">
                   <TextView
-                      android:id="@+id/w_stop"
                       android:layout_width="wrap_content"
                       android:layout_height="wrap_content"
-                      android:background="@drawable/widget_btn"
-                      android:gravity="center"
-                      android:paddingBottom="12dp"
-                      android:paddingLeft="20dp"
-                      android:paddingRight="20dp"
-                      android:paddingTop="12dp"
-                      android:text="Stopp"
+                      android:includeFontPadding="false"
+                      android:text="▶︎"
+                      android:textColor="#1B1F24"
+                      android:textSize="26sp" />
+                  <TextView
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:layout_marginTop="4dp"
+                      android:includeFontPadding="false"
+                      android:text="START"
+                      android:letterSpacing="0.12"
+                      android:textColor="#1B1F24"
+                      android:textSize="12sp"
+                      android:textStyle="bold" />
+              </LinearLayout>
+
+              <LinearLayout
+                  android:id="@+id/w_stop"
+                  android:layout_width="84dp"
+                  android:layout_height="match_parent"
+                  android:background="@drawable/widget_btn_stop"
+                  android:gravity="center"
+                  android:orientation="vertical"
+                  android:visibility="gone">
+                  <TextView
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:includeFontPadding="false"
+                      android:text="■"
                       android:textColor="#FFFFFF"
-                      android:textSize="16sp"
+                      android:textSize="26sp" />
+                  <TextView
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:layout_marginTop="4dp"
+                      android:includeFontPadding="false"
+                      android:text="STOPP"
+                      android:letterSpacing="0.12"
+                      android:textColor="#FFFFFF"
+                      android:textSize="12sp"
                       android:textStyle="bold" />
               </LinearLayout>
           </LinearLayout>
@@ -339,16 +476,25 @@ jobs:
           cat > $RES/drawable/widget_bg.xml <<'XML'
           <?xml version="1.0" encoding="utf-8"?>
           <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-              <solid android:color="#1B1F24" />
-              <corners android:radius="20dp" />
+              <gradient android:angle="315" android:startColor="#252E35" android:endColor="#12171B" />
+              <stroke android:width="1dp" android:color="#33404A" />
+              <corners android:radius="26dp" />
           </shape>
           XML
 
-          cat > $RES/drawable/widget_btn.xml <<'XML'
+          cat > $RES/drawable/widget_btn_start.xml <<'XML'
           <?xml version="1.0" encoding="utf-8"?>
           <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-              <solid android:color="#D93025" />
-              <corners android:radius="14dp" />
+              <gradient android:angle="270" android:startColor="#FFD63A" android:endColor="#F2B800" />
+              <corners android:radius="18dp" />
+          </shape>
+          XML
+
+          cat > $RES/drawable/widget_btn_stop.xml <<'XML'
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+              <gradient android:angle="270" android:startColor="#F0604F" android:endColor="#D93025" />
+              <corners android:radius="18dp" />
           </shape>
           XML
 
@@ -390,7 +536,13 @@ jobs:
 
       - name: APK bauen
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon
+        run: |
+          ok=0
+          for i in 1 2 3; do
+            if ./gradlew assembleDebug --no-daemon; then ok=1; break; fi
+            echo "Versuch $i fehlgeschlagen, neuer Versuch in 30 s"; sleep 30
+          done
+          [ "$ok" = 1 ]
 
       - name: APK als Download bereitstellen
         env:
