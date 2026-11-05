@@ -267,7 +267,7 @@ layers:
       tag_value: ele
       type: double
   - source: osm
-    geometry: centroid
+    geometry: point
     min_zoom: 11
     include_when:
       tourism: [alpine_hut, wilderness_hut]
@@ -281,11 +281,42 @@ layers:
       tag_value: ele
       type: double
   - source: osm
-    geometry: centroid
+    geometry: polygon_point_on_surface
+    min_zoom: 11
+    include_when:
+      tourism: [alpine_hut, wilderness_hut]
+    exclude_when:
+      name: ""
+    attributes:
+    - key: class
+      value: hut
+    - key: name
+    - key: ele
+      tag_value: ele
+      type: double
+  # Almen: Name endet auf "alm"/"alpe" oder enthält "Alm"/"Alpe" als eigenes Wort (nicht "Palmengarten")
+  - source: osm
+    geometry: point
     min_zoom: 12
     include_when:
       __all__:
-      - name: ["%alm%", "%Alm%", "%alpe%", "%Alpe%"]
+      - name: ["%alm", "%alm %", "%alm-%", "Alm %", "Alm-%", "% Alm", "% Alm %", "%-Alm", "%-Alm %", "%alpe", "%alpe %", "Alpe %", "% Alpe", "% Alpe %", "%-Alpe", "%almhütte%", "%Almhütte%"]
+      - building: __any__
+        place: __any__
+        amenity: __any__
+    exclude_when:
+      tourism: [alpine_hut, wilderness_hut]
+      natural: [peak, saddle]
+    attributes:
+    - key: class
+      value: alm
+    - key: name
+  - source: osm
+    geometry: polygon_point_on_surface
+    min_zoom: 12
+    include_when:
+      __all__:
+      - name: ["%alm", "%alm %", "%alm-%", "Alm %", "Alm-%", "% Alm", "% Alm %", "%-Alm", "%-Alm %", "%alpe", "%alpe %", "Alpe %", "% Alpe", "% Alpe %", "%-Alpe", "%almhütte%", "%Almhütte%"]
       - building: __any__
         place: __any__
         amenity: __any__
