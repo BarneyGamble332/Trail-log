@@ -1553,10 +1553,11 @@ if($('#verNum').textContent.startsWith('__')) $('#verNum').textContent='Web';
 
 /* ---------- Android-Widget (Startbildschirm): Aufnahme starten/stoppen, Live-Daten ---------- */
 var TW=null;
-if(NATIVE){ try{ TW=Capacitor.registerPlugin('TrailWidget'); }catch(e){ TW=null; } }
+var TWerr='';
+if(NATIVE){ try{ TW=Capacitor.registerPlugin('TrailWidget'); if(!TW) TWerr='leer'; }catch(e){ TW=null; TWerr=String(e&&e.message||e).slice(0,70); } }
 var wLast=0;
-function widgetPush(force){
-  if(!TW) return;
+function widgetPush(force,raw){
+  if(!TW) return raw?Promise.reject(new Error('kein Plugin')):undefined;
   const now=Date.now(); if(!force&&now-wLast<4000) return; wLast=now;
   try{
     let sub='Bereit zur Aufnahme';
@@ -1564,7 +1565,9 @@ function widgetPush(force){
       const n=new Date(), a=S.acts.filter(x=>{ const d=new Date(x.d); return d.getFullYear()===n.getFullYear()&&d.getMonth()===n.getMonth(); });
       if(a.length) sub=n.toLocaleDateString('de-DE',{month:'long'})+': '+a.length+(a.length===1?' Tour · ':' Touren · ')+fmt0.format(a.reduce((s,x)=>s+x.dist,0)/1000)+' km · '+fmt0.format(a.reduce((s,x)=>s+x.gain,0))+' Hm';
     }
-    Promise.resolve(TW.update({running:!!REC.on,start:REC.t0||0,dist:fmt1.format((REC.dist||0)/1000)+' km',gain:fmt0.format(REC.gain||0)+' Hm',sub})).catch(e=>{ if(!widgetPush.err){ widgetPush.err=1; toast('Widget: '+String(e&&e.message||e).slice(0,100),6000); } });
+    const pr=Promise.resolve(TW.update({running:!!REC.on,start:REC.t0||0,dist:fmt1.format((REC.dist||0)/1000)+' km',gain:fmt0.format(REC.gain||0)+' Hm',sub}));
+    if(raw) return pr;
+    pr.catch(e=>{ if(!widgetPush.err){ widgetPush.err=1; toast('Widget: '+String(e&&e.message||e).slice(0,100),6000); } });
   }catch(e){}
 }
 if(TW){
@@ -1577,7 +1580,12 @@ if(TW){
   });
   setTimeout(()=>widgetPush(true),1500);
 }
-if(NATIVE) $('#verNum').textContent+=' · Widget '+(TW?'verbunden':'nicht verfügbar');
+if(NATIVE){
+  const base=$('#verNum').textContent, setV=t=>{ $('#verNum').textContent=base+' · '+t; };
+  if(!TW) setV('Widget nicht verfügbar ('+(TWerr||'Plugin fehlt')+')');
+  else { setV('Widget wird geprüft …'); setTimeout(()=>{ let p; try{ p=widgetPush(true,true); }catch(e){ p=Promise.reject(e); }
+    Promise.resolve(p).then(()=>setV('Widget verbunden'),e=>setV('Widget-Fehler: '+String(e&&e.message||e).slice(0,80))); },2000); }
+}
 
 /* ---------- Start ---------- */
 (async()=>{
