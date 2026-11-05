@@ -6,6 +6,7 @@ on:
     paths:
       - index.html
       - .github/workflows/android.yml
+      - karte/fonts/**
 
 permissions:
   contents: write
@@ -36,6 +37,17 @@ jobs:
           set -euo pipefail
           # 1) Web-App ins Capacitor-Projekt
           mkdir -p www && sed "s/__BUILD__/1.${RUN_NUMBER:-1}/" index.html > www/index.html
+          # Bibliotheken und Kartenschriften in die App packen: sie startet dann ohne Netz
+          # und kann die heruntergeladene MTB-Karte komplett offline zeichnen
+          mkdir -p libs
+          (cd libs && npm init -y >/dev/null && npm i --no-audit --no-fund leaflet@1.9.4 maplibre-gl@5.24.0 @maplibre/maplibre-gl-leaflet@0.1.4 pmtiles@4.5.0 @zip.js/zip.js@2.7.52 >/dev/null)
+          for p in leaflet@1.9.4 maplibre-gl@5.24.0 @maplibre/maplibre-gl-leaflet@0.1.4 pmtiles@4.5.0 @zip.js/zip.js@2.7.52; do
+            mkdir -p "www/lib/npm/$p" && cp -r "libs/node_modules/${p%@*}/dist" "www/lib/npm/$p/"
+          done
+          sed -i 's#https://cdn.jsdelivr.net/npm/#lib/npm/#g; s#https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/#lib/npm/leaflet@1.9.4/dist/#g' www/index.html
+          ! grep -n -E 'https://(cdn\.jsdelivr\.net|cdnjs\.cloudflare\.com)' www/index.html
+          mkdir -p www/karte && cp -r karte/fonts www/karte/
+          rm -rf libs
           npm init -y >/dev/null
           npm i --no-audit --no-fund @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6 @capacitor/filesystem@6 @capacitor/share@6 @capacitor-community/background-geolocation@1.2.20
           npx cap init "Trail Log" de.bernhard.traillog --web-dir www
