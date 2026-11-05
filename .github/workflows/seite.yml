@@ -1,0 +1,65 @@
+name: Seite veröffentlichen
+
+# Veröffentlicht die Web-App auf GitHub Pages, zusammen mit den Offline-Karten
+# aus dem Release "karten" (dort gibt es CORS und Teil-Downloads für die App).
+# Einmalig nötig: Settings → Pages → Source: "GitHub Actions".
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  veroeffentlichen:
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Seite zusammenstellen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p _site/karte/daten
+          cp index.html README.md _site/
+          cp -r karte/fonts karte/regionen.json _site/karte/
+          if gh release view karten >/dev/null 2>&1; then
+            gh release download karten -D _site/karte/daten --clobber
+          else
+            echo "Noch keine Karten gebaut."
+          fi
+          python3 - <<'PY'
+          import glob, json, os
+          d = '_site/karte/daten'
+          ms = []
+          for p in sorted(glob.glob(d + '/*.json')):
+              if os.path.basename(p) == 'index.json':
+                  continue
+              with open(p) as f:
+                  ms.append(json.load(f))
+          with open(d + '/index.json', 'w') as f:
+              json.dump(ms, f, ensure_ascii=False)
+          print('Regionen:', [m['id'] for m in ms])
+          PY
+          touch _site/.nojekyll
+          du -sh _site
+          size=$(du -sm _site | cut -f1)
+          if [ "$size" -gt 980 ]; then echo "::warning::Seite ist ${size} MB groß, GitHub Pages erlaubt höchstens 1 GB."; fi
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deploy
+        uses: actions/deploy-pages@v4

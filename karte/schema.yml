@@ -1,0 +1,330 @@
+# Trail Log MTB-Karte: Planetiler-Schema
+# Aus OpenStreetMap und Höhendaten werden Vektorkacheln (PMTiles) für die Offline-Karte der App.
+# Wichtig für MTB: Wege behalten mtb:scale, sac_scale, tracktype, surface und trail_visibility.
+schema_name: Trail Log MTB
+schema_description: Offline-Karte fürs Mountainbiken (Wege mit S-Skala, Höhenlinien, Gipfel, Hütten, Almen)
+attribution: <a href="https://www.openstreetmap.org/copyright">&copy; OpenStreetMap-Mitwirkende</a>, Höhenlinien &copy; Copernicus DEM
+args:
+  osm_path: region.osm.pbf
+  contours_major: contours_major.gpkg
+  contours_minor: contours_minor.gpkg
+  maxzoom: 14
+sources:
+  osm:
+    type: osm
+    local_path: '${ args.osm_path }'
+  contours_major:
+    type: geopackage
+    local_path: '${ args.contours_major }'
+    projection: EPSG:4326
+  contours_minor:
+    type: geopackage
+    local_path: '${ args.contours_minor }'
+    projection: EPSG:4326
+
+layers:
+
+# ---------- Wasserflächen ----------
+- id: water
+  features:
+  - source: osm
+    geometry: polygon
+    min_zoom: 6
+    include_when:
+      natural: water
+      waterway: [riverbank, dock]
+      landuse: [reservoir, basin]
+  tile_post_process:
+    merge_polygons:
+      min_area: 1
+      min_area_at_max_zoom: 0.25
+
+# ---------- Flüsse und Bäche ----------
+- id: waterway
+  features:
+  - source: osm
+    geometry: line
+    min_zoom:
+      default_value: 13
+      overrides:
+        9:
+          waterway: river
+        11:
+          waterway: canal
+    include_when:
+      waterway: [river, canal, stream]
+    attributes:
+    - key: class
+      type: match_value
+    - key: name
+      min_zoom: 12
+
+# ---------- Wald, Wiese, Fels, Gletscher, Siedlung ----------
+- id: landcover
+  features:
+  - source: osm
+    geometry: polygon
+    min_zoom:
+      default_value: 12
+      overrides:
+        7:
+          landuse: forest
+          natural: [wood, glacier]
+        9:
+          landuse: [residential, commercial, retail, industrial]
+        10:
+          natural: [bare_rock, scree, shingle]
+    include_when:
+      landuse: [forest, meadow, grass, residential, commercial, retail, industrial]
+      natural: [wood, grassland, heath, scrub, bare_rock, scree, shingle, glacier]
+      leisure: park
+    attributes:
+    - key: class
+      value:
+        forest:
+          landuse: forest
+          natural: wood
+        grass:
+          landuse: [meadow, grass]
+          natural: [grassland, heath, scrub]
+          leisure: park
+        rock:
+          natural: [bare_rock, scree, shingle]
+        glacier:
+          natural: glacier
+        built: otherwise
+  tile_post_process:
+    merge_polygons:
+      min_area: 1
+      min_area_at_max_zoom: 0.25
+
+# ---------- Gebäude ----------
+- id: building
+  features:
+  - source: osm
+    geometry: polygon
+    min_zoom: 14
+    include_when:
+      building: __any__
+    exclude_when:
+      building: ["no"]
+
+# ---------- Straßen, Forstwege, Pfade ----------
+- id: road
+  features:
+  - source: osm
+    geometry: line
+    min_zoom:
+      default_value: 13
+      overrides:
+        6:
+          highway: motorway%
+        7:
+          highway: trunk%
+        8:
+          highway: primary%
+        9:
+          highway: secondary%
+        10:
+          highway: tertiary%
+        12:
+          highway: [unclassified, residential, living_street, track, path, bridleway, cycleway]
+        14:
+          highway: [service, steps, pedestrian]
+    include_when:
+      highway:
+      - motorway
+      - motorway_link
+      - trunk
+      - trunk_link
+      - primary
+      - primary_link
+      - secondary
+      - secondary_link
+      - tertiary
+      - tertiary_link
+      - unclassified
+      - residential
+      - living_street
+      - service
+      - pedestrian
+      - track
+      - path
+      - footway
+      - bridleway
+      - cycleway
+      - steps
+    exclude_when:
+      footway: [sidewalk, crossing]
+      service: [parking_aisle, driveway]
+      area: "yes"
+    attributes:
+    - key: class
+      type: match_value
+    - key: mtb
+      tag_value: "mtb:scale"
+    - key: sac
+      tag_value: sac_scale
+    - key: tt
+      tag_value: tracktype
+    - key: surface
+      tag_value: surface
+    - key: vis
+      tag_value: trail_visibility
+    - key: bicycle
+      tag_value: bicycle
+    - key: name
+      min_zoom: 13
+  tile_post_process:
+    merge_line_strings:
+      min_length: 0.5
+      min_length_at_max_zoom: 0
+      tolerance: 0.5
+      tolerance_at_max_zoom: 0.125
+      buffer: 4
+
+# ---------- Bahn und Seilbahnen ----------
+- id: transit
+  features:
+  - source: osm
+    geometry: line
+    min_zoom:
+      default_value: 13
+      overrides:
+        9:
+          railway: [rail, narrow_gauge]
+        11:
+          railway: [funicular, rack]
+          aerialway: [cable_car, gondola, chair_lift, mixed_lift]
+    include_when:
+      railway: [rail, narrow_gauge, light_rail, funicular, rack]
+      aerialway: [cable_car, gondola, chair_lift, mixed_lift, drag_lift, t-bar, j-bar, platter]
+    exclude_when:
+      service: __any__
+    attributes:
+    - key: class
+      value:
+        lift:
+          aerialway: __any__
+        rail: otherwise
+    - key: name
+      min_zoom: 13
+
+# ---------- Orte ----------
+- id: place
+  features:
+  - source: osm
+    geometry: point
+    min_zoom:
+      default_value: 13
+      overrides:
+        6:
+          place: city
+        8:
+          place: town
+        11:
+          place: village
+        12:
+          place: suburb
+    include_when:
+      place: [city, town, village, suburb, hamlet, isolated_dwelling]
+    exclude_when:
+      name: ""
+    attributes:
+    - key: class
+      type: match_value
+    - key: name
+
+# ---------- Gipfel, Joch, Hütten, Almen, Brunnen ----------
+- id: poi
+  features:
+  - source: osm
+    geometry: point
+    min_zoom: 11
+    include_when:
+      natural: peak
+    exclude_when:
+      name: ""
+    attributes:
+    - key: class
+      value: peak
+    - key: name
+    - key: ele
+      tag_value: ele
+      type: double
+  - source: osm
+    geometry: point
+    min_zoom: 13
+    include_when:
+      natural: saddle
+    exclude_when:
+      name: ""
+    attributes:
+    - key: class
+      value: saddle
+    - key: name
+    - key: ele
+      tag_value: ele
+      type: double
+  - source: osm
+    geometry: centroid
+    min_zoom: 11
+    include_when:
+      tourism: [alpine_hut, wilderness_hut]
+    exclude_when:
+      name: ""
+    attributes:
+    - key: class
+      value: hut
+    - key: name
+    - key: ele
+      tag_value: ele
+      type: double
+  - source: osm
+    geometry: centroid
+    min_zoom: 12
+    include_when:
+      __all__:
+      - name: ["%alm%", "%Alm%", "%alpe%", "%Alpe%"]
+      - building: __any__
+        place: __any__
+        amenity: __any__
+    exclude_when:
+      tourism: [alpine_hut, wilderness_hut]
+      natural: [peak, saddle]
+    attributes:
+    - key: class
+      value: alm
+    - key: name
+  - source: osm
+    geometry: point
+    min_zoom: 14
+    include_when:
+      amenity: drinking_water
+      natural: spring
+    attributes:
+    - key: class
+      value: water
+    - key: name
+
+# ---------- Höhenlinien (aus Copernicus DEM, vorab erzeugt) ----------
+- id: contour
+  features:
+  - source: contours_major
+    geometry: line
+    min_zoom: 11
+    attributes:
+    - key: ele
+      tag_value: ele
+      type: integer
+    - key: idx
+      value: 1
+  - source: contours_minor
+    geometry: line
+    min_zoom: 13
+    attributes:
+    - key: ele
+      tag_value: ele
+      type: integer
+    - key: idx
+      value: 0

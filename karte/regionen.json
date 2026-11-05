@@ -1,0 +1,14 @@
+[
+  {
+    "id": "muc-ibk",
+    "name": "München – Innsbruck",
+    "beschreibung": "Kreis mit 100 km Radius zwischen München und Innsbruck",
+    "center": [47.703, 11.490],
+    "radius_km": 100,
+    "osm": [
+      "europe/germany/bayern",
+      "europe/austria",
+      "europe/italy/nord-est"
+    ]
+  }
+]
