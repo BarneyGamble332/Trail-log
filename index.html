@@ -894,7 +894,7 @@ function applyFilter(){
   visible=[]; visibleIdx=new Set();
   S.acts.forEach((a,i)=>{ if(S.types.size&&!S.types.has(a.t)) return; if(S.years.size&&!S.years.has(yearOf(a))) return; visible.push(a); visibleIdx.add(i); });
   ls.set('types',[...S.types]); ls.set('years',[...S.years]);
-  heat.redraw(); renderPois(); renderStats(); renderSummary(); renderTours();
+  heat.redraw(); renderPois(); renderStats(); renderSummary(); renderTours(); widgetPush();
 }
 const chip=(v,l,n,on)=>`<button class="chip${on?' on':''}" data-v="${esc(v)}" aria-pressed="${on}">${esc(l)}<span>${fmt0.format(n)}</span></button>`;
 function renderChips(){
@@ -1426,9 +1426,9 @@ async function recStart(){
     }catch(e){ toast('Aufzeichnung konnte nicht starten: '+String(e&&e.message||e).slice(0,120),8000); recStop(true); return; }
   } else REC.watch=navigator.geolocation.watchPosition(recPos,recErr,{enableHighAccuracy:true,maximumAge:1000,timeout:30000});
   document.body.classList.add('recording'); recUI(); $('#recHud').hidden=false; $('#rhFollow').hidden=true;
-  sheet.classList.remove('open'); recTick(); REC.tick=setInterval(recTick,1000);
+  sheet.classList.remove('open'); recTick(); REC.tick=setInterval(recTick,1000); widgetPush(true);
 }
-function recTick(){ if(!REC.on) return; const h=fmt0.format(REC.gain)+' Hm', d=fmt1.format(REC.dist/1000)+' km', t=fmtClock((Date.now()-REC.t0)/1000); $('#rhD').textContent=d; $('#rhT').textContent=t; $('#rhH').textContent=h; $('#rpH').textContent=h; $('#rpD').textContent=d; $('#rpT').textContent=t; }
+function recTick(){ if(!REC.on) return; widgetPush(); const h=fmt0.format(REC.gain)+' Hm', d=fmt1.format(REC.dist/1000)+' km', t=fmtClock((Date.now()-REC.t0)/1000); $('#rhD').textContent=d; $('#rhT').textContent=t; $('#rhH').textContent=h; $('#rpH').textContent=h; $('#rpD').textContent=d; $('#rpT').textContent=t; }
 function recPos(p){
   if(!REC.on) return;
   const c=p.coords; if(c.accuracy>40) return;
@@ -1458,7 +1458,7 @@ function recErr(e){
 }
 async function recStop(discard){
   try{ navigator.geolocation.clearWatch(REC.watch); }catch(e){} if(NATIVE&&REC.bgId!=null){ try{ await BG.removeWatcher({id:REC.bgId}); }catch(e){} REC.bgId=null; } clearInterval(REC.tick); try{ REC.wl&&REC.wl.release(); }catch(e){}
-  const pts=REC.pts, type=REC.type, t0=REC.t0; REC.on=false; REC.pts=[]; REC.dist=0; REC.gain=0; REC.wl=null;
+  const pts=REC.pts, type=REC.type, t0=REC.t0; REC.on=false; REC.pts=[]; REC.dist=0; REC.gain=0; REC.wl=null; widgetPush(true);
   document.body.classList.remove('recording'); recUI(); $('#recHud').hidden=true; recLayer.clearLayers(); ls.set('rec',null);
   if(!discard) await saveRecording(pts,type,t0);
 }
@@ -1550,6 +1550,33 @@ async function saveBlob(blob,name){
 }
 
 if($('#verNum').textContent.startsWith('__')) $('#verNum').textContent='Web';
+
+/* ---------- Android-Widget (Startbildschirm): Aufnahme starten/stoppen, Live-Daten ---------- */
+var TW=null;
+if(NATIVE){ try{ TW=Capacitor.registerPlugin('TrailWidget'); }catch(e){ TW=null; } }
+var wLast=0;
+function widgetPush(force){
+  if(!TW) return;
+  const now=Date.now(); if(!force&&now-wLast<4000) return; wLast=now;
+  try{
+    let sub='Bereit zur Aufnahme';
+    if(!REC.on){
+      const n=new Date(), a=S.acts.filter(x=>{ const d=new Date(x.d); return d.getFullYear()===n.getFullYear()&&d.getMonth()===n.getMonth(); });
+      if(a.length) sub=n.toLocaleDateString('de-DE',{month:'long'})+': '+a.length+(a.length===1?' Tour · ':' Touren · ')+fmt0.format(a.reduce((s,x)=>s+x.dist,0)/1000)+' km · '+fmt0.format(a.reduce((s,x)=>s+x.gain,0))+' Hm';
+    }
+    Promise.resolve(TW.update({running:!!REC.on,start:REC.t0||0,dist:fmt1.format((REC.dist||0)/1000)+' km',gain:fmt0.format(REC.gain||0)+' Hm',sub})).catch(()=>{});
+  }catch(e){}
+}
+if(TW){
+  TW.addListener('widgetAction',ev=>{
+    const a=ev&&ev.action;
+    setTimeout(()=>{
+      if(a==='start'){ openTab('rec'); if(!REC.on) recStart(); }
+      else if(a==='stop'){ if(REC.on) recStop(false); }
+    },700);
+  });
+  setTimeout(()=>widgetPush(true),1500);
+}
 
 /* ---------- Start ---------- */
 (async()=>{
