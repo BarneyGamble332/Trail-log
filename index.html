@@ -1490,9 +1490,11 @@ async function recStart(){
   recLayer.clearLayers(); selLayer.clearLayers(); TOUR.sel=null; renderTours();
   REC.line=L.polyline([],{pane:'route',interactive:false,color:'#1b7fe8',weight:5,lineJoin:'round',lineCap:'round'}).addTo(recLayer);
   try{ REC.wl=await navigator.wakeLock.request('screen'); }catch(e){}
+  REC.tStart=Date.now();
   if(NATIVE){
     try{
       if(!BG) throw new Error('Standort-Plugin fehlt');
+      recBgPrep();
       REC.bgId=await BG.addWatcher({backgroundTitle:'Trail Log',backgroundMessage:'Aufzeichnung läuft',requestPermissions:true,stale:false,distanceFilter:0},(l,err)=>{
         if(err){ if(err.code==='NOT_AUTHORIZED'){ toast('Standortzugriff fehlt. Bitte in den App-Einstellungen „Standort“ erlauben.',7000); try{ BG.openSettings(); }catch(e){} recStop(true); } else recErr(err); return; }
         if(!l) return;
@@ -1508,7 +1510,10 @@ function recTick(){ if(!REC.on) return; widgetPush(); const h=fmt0.format(REC.ga
 function recPos(p){
   if(!REC.on) return;
   const c=p.coords; if(c.accuracy>40) return;
-  if(Date.now()-p.timestamp>15000) return; // veralteter Standort aus dem Zwischenspeicher
+  // Veralteter Standort aus dem Zwischenspeicher (von vor dem Start). Nicht mit „jetzt“ vergleichen:
+  // bei gesperrtem Handy kommen die Punkte gesammelt und verspätet an und sind trotzdem gültig.
+  if(p.timestamp<(REC.tStart||REC.t0)-10000) return;
+  if(!NATIVE&&Date.now()-p.timestamp>15000) return;
   const n=[c.latitude,c.longitude,c.altitude==null?null:Math.round(c.altitude*10)/10,p.timestamp], q=REC.pts[REC.pts.length-1];
   if(q){
     const s=haversine(q[0],q[1],n[0],n[1]), dt=(n[3]-q[3])/1000;
@@ -1531,6 +1536,20 @@ function recPos(p){
 function recErr(e){
   if(e.code===1){ toast('Standortzugriff verweigert. Bitte im Browser erlauben.',6000); recStop(true); return; }
   if(Date.now()-REC.errT>15000){ REC.errT=Date.now(); toast('Standort gerade nicht verfügbar, die Aufnahme läuft weiter.',4000); }
+}
+/* Damit die Aufnahme bei gesperrtem Handy weiterläuft: Benachrichtigung erlauben und
+   Akku-Optimierung für die App ausschalten (einmal fragen, danach nur noch erinnern) */
+async function recBgPrep(){
+  const G=typeof TW!=='undefined'&&TW?TW:nativePlugin('TrailWidget'); if(!G||!G.bgStatus) return;
+  try{
+    const st=await G.bgStatus();
+    if(!st.notify) await G.requestNotify();
+    if(!st.battery){
+      const asked=ls.get('bgAsked',0);
+      if(asked<2){ ls.set('bgAsked',asked+1); toast('Damit die Aufnahme bei gesperrtem Handy weiterläuft: bitte „Zulassen“ tippen (Akku-Optimierung aus).',8000); await sleep(1200); await G.requestBattery(); }
+      else toast('Hinweis: Akku-Optimierung ist für Trail Log noch an, die Aufnahme kann bei gesperrtem Handy aussetzen.',6000);
+    }
+  }catch(e){ console.warn('bgPrep',e); }
 }
 async function recStop(discard){
   try{ navigator.geolocation.clearWatch(REC.watch); }catch(e){} if(NATIVE&&REC.bgId!=null){ try{ await BG.removeWatcher({id:REC.bgId}); }catch(e){} REC.bgId=null; } clearInterval(REC.tick); try{ REC.wl&&REC.wl.release(); }catch(e){}

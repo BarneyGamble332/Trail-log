@@ -51,6 +51,9 @@ jobs:
           npm init -y >/dev/null
           npm i --no-audit --no-fund @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6 @capacitor/filesystem@6 @capacitor/share@6 @capacitor-community/background-geolocation@1.2.20
           npx cap init "Trail Log" de.bernhard.traillog --web-dir www
+          # Ohne useLegacyBridge drosselt Android die GPS-Übergabe an die App im Hintergrund (Plugin-Doku)
+          node -e "const f='capacitor.config.json',c=require('./'+f);c.android=Object.assign(c.android||{},{useLegacyBridge:true});require('fs').writeFileSync(f,JSON.stringify(c,null,2))"
+          cat capacitor.config.json
           npx cap add android
           npx cap sync android
           RES=android/app/src/main/res
@@ -113,8 +116,15 @@ jobs:
           cat > $PKG/TrailWidgetPlugin.java <<'JAVA'
           package de.bernhard.traillog;
 
+          import android.Manifest;
           import android.content.ContentResolver;
           import android.content.ContentValues;
+          import android.content.Intent;
+          import android.content.pm.PackageManager;
+          import android.os.PowerManager;
+          import android.provider.Settings;
+          import androidx.core.app.ActivityCompat;
+          import androidx.core.content.ContextCompat;
           import android.net.Uri;
           import android.os.Build;
           import android.provider.MediaStore;
@@ -163,6 +173,44 @@ jobs:
                       call.getString("dist", "0,0"), call.getString("gain", "0"),
                       call.getString("m", ""), call.getString("mt", "–"),
                       call.getString("mk", "–"), call.getString("mh", "–"));
+                  call.resolve();
+              }
+
+              /* Für die Aufnahme bei gesperrtem Handy: Benachrichtigung erlauben (Android 13+)
+                 und die App von der Akku-Optimierung ausnehmen, sonst legt Samsung sie schlafen */
+              @PluginMethod
+              public void bgStatus(PluginCall call) {
+                  JSObject r = new JSObject();
+                  PowerManager pm = (PowerManager) getContext().getSystemService(android.content.Context.POWER_SERVICE);
+                  r.put("battery", pm == null || pm.isIgnoringBatteryOptimizations(getContext().getPackageName()));
+                  r.put("notify", Build.VERSION.SDK_INT < 33 ||
+                      ContextCompat.checkSelfPermission(getContext(), Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED);
+                  call.resolve(r);
+              }
+
+              @PluginMethod
+              public void requestNotify(PluginCall call) {
+                  if (Build.VERSION.SDK_INT >= 33 && getActivity() != null &&
+                      ContextCompat.checkSelfPermission(getContext(), Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                      ActivityCompat.requestPermissions(getActivity(), new String[]{Manifest.permission.POST_NOTIFICATIONS}, 4711);
+                  }
+                  call.resolve();
+              }
+
+              @PluginMethod
+              public void requestBattery(PluginCall call) {
+                  try {
+                      Intent i = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+                      i.setData(Uri.parse("package:" + getContext().getPackageName()));
+                      i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                      getContext().startActivity(i);
+                  } catch (Exception e) {
+                      try {
+                          Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getContext().getPackageName()));
+                          i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                          getContext().startActivity(i);
+                      } catch (Exception ignore) {}
+                  }
                   call.resolve();
               }
 
@@ -590,7 +638,10 @@ jobs:
                   </receiver>
               </application>'''
           assert '</application>' in s
-          open(m,'w').write(s.replace('</application>',rec,1))
+          s=s.replace('</application>',rec,1)
+          perm='    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />\n</manifest>'
+          s=s.replace('</manifest>',perm,1)
+          open(m,'w').write(s)
           st='android/app/src/main/res/values/strings.xml'
           t=open(st).read()
           open(st,'w').write(t.replace('</resources>','    <string name="widget_desc">Aufnahme starten und Live-Daten anzeigen</string>\n</resources>',1))
