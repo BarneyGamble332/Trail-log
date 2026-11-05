@@ -1191,6 +1191,36 @@ $('#exSub').addEventListener('input',e=>{ EX.sub=e.target.value; ls.set('ex.sub'
 $('#exCancel').onclick=()=>$('#exDlg').hidden=true;
 $('#exGo').onclick=()=>{ $('#exDlg').hidden=true; exportImage(); };
 
+/* MTB-Karte für den Export zeichnen: unsichtbare MapLibre-Karte in Stücken (max. 4096 px),
+   gleicher Stil und gleiche Schalter wie auf dem Bildschirm, nur in höherer Auflösung */
+async function renderMtbExport(ctx,R,sc,W,H,mz,onProg){
+  await kLibs(); if(!K.srcKey) return false;
+  let T=4096;
+  try{ const g=document.createElement('canvas').getContext('webgl2')||document.createElement('canvas').getContext('webgl');
+    if(g) T=Math.min(T,g.getParameter(g.MAX_RENDERBUFFER_SIZE),g.getParameter(g.MAX_TEXTURE_SIZE)); }catch(e){}
+  const nx=Math.ceil(W/T), ny=Math.ceil(H/T); let ok=true, n=0;
+  for(let cy=0;cy<H;cy+=T) for(let cx=0;cx<W;cx+=T){
+    if(busy.cancel) throw new Error('abgebrochen');
+    const cw=Math.min(T,W-cx), ch=Math.min(T,H-cy);
+    const div=document.createElement('div');
+    div.style.cssText=`position:fixed;left:-20000px;top:0;width:${cw/sc}px;height:${ch/sc}px;pointer-events:none`;
+    document.body.appendChild(div);
+    const c=map.unproject([R.x0+(cx+cw/2)/sc,R.y0+(cy+ch/2)/sc],mz);
+    let gm;
+    try{
+      gm=new maplibregl.Map({container:div,style:mtbStyle(K.srcKey),center:[c.lng,c.lat],zoom:mz-1,pixelRatio:sc,
+        interactive:false,attributionControl:false,fadeDuration:0,maxCanvasSize:[T,T],
+        canvasContextAttributes:{preserveDrawingBuffer:true},preserveDrawingBuffer:true});
+      await new Promise(res=>{ const t=setTimeout(()=>{ ok=false; res(); },45000); gm.once('idle',()=>{ clearTimeout(t); res(); }); });
+      const cv=gm.getCanvas();
+      ctx.drawImage(cv,0,0,cv.width,cv.height,cx,cy,cw,ch);
+    }catch(e){ console.warn('MTB-Export',e); ok=false; }
+    finally{ try{ gm&&gm.remove(); }catch(e){} div.remove(); }
+    n++; onProg(n,nx*ny);
+  }
+  return ok;
+}
+
 let exporting=false;
 async function exportImage(){
   if(exporting) return; exporting=true;
@@ -1218,6 +1248,9 @@ async function exportImage(){
       ctx.save(); ctx.imageSmoothingQuality='high'; ctx.globalAlpha=1-S.fade; if(S.gray) ctx.filter='grayscale(1)';
       for(const t of tiles){ if(!t.im){ tilesOk=false; continue; } ctx.drawImage(t.im,t.x,t.y,ts*K+1,ts*K+1); }
       ctx.restore();
+    }
+    else if(S.base==='mtb'){
+      tilesOk=await renderMtbExport(ctx,R,K,W,H,mz,(d,t)=>busy.set(0.3*d/t,`MTB-Karte zeichnen: Teil ${d} von ${t}`));
     }
     if(busy.cancel) throw new Error('abgebrochen');
 
@@ -1259,12 +1292,13 @@ async function exportImage(){
       const pad=Math.round(Math.min(W,H)*0.06), tSize=Math.round(Math.min(W,H)*0.075), sSize=Math.round(tSize*0.36);
       ctx.save(); ctx.textAlign='left'; ctx.textBaseline='alphabetic'; ctx.fillStyle=ink;
       if(!dark){ ctx.shadowColor='rgba(255,255,255,.9)'; ctx.shadowBlur=tSize*0.15; }
-      let y=H-pad-(EX.info||S.base==='topo'?sSize*1.2:0);
+      let y=H-pad-(EX.info||S.base!=='plain'?sSize*1.2:0);
       if(EX.sub){ ctx.font=`500 ${sSize}px Barlow, system-ui, sans-serif`; ctx.globalAlpha=0.8; ctx.fillText(EX.sub.toUpperCase(),pad,y); ctx.globalAlpha=1; y-=sSize*1.5; }
       if(EX.title){ ctx.font=`700 ${tSize}px "Barlow Condensed", "Arial Narrow", sans-serif`; ctx.fillText(EX.title.toUpperCase(),pad,y); }
       ctx.restore();
     }
-    const attr=S.base==='topo'&&tilesOk?'Karte © OpenTopoMap (CC-BY-SA) · Daten © OpenStreetMap':(EX.pois&&S.pois.size?'Gipfel © OpenStreetMap':'');
+    const attr=S.base==='topo'&&tilesOk?'Karte © OpenTopoMap (CC-BY-SA) · Daten © OpenStreetMap':
+      S.base==='mtb'&&tilesOk?'Karte © OpenStreetMap-Mitwirkende · Höhen © Copernicus DEM':(EX.pois&&S.pois.size?'Gipfel © OpenStreetMap':'');
     const info=EX.info?'Trail Log · '+fmt0.format(visible.length)+' Touren':'';
     if(attr||info){
       const fs=Math.round(Math.min(W,H)*0.011), pad=Math.round(Math.min(W,H)*0.02);
@@ -1281,8 +1315,8 @@ async function exportImage(){
     const d=new Date(), name=`trail-log-heatmap-${EX_SIZES[EX.size].label.toLowerCase()}-${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}.png`;
     const where=await saveBlob(blob,name,{gallery:true});
     busy.hide();
-    toast(where==='gallery'?`In der Galerie gespeichert (Bilder › Trail Log, ${fmt1.format(blob.size/1e6)} MB)`+(tilesOk?'':'. Die Topo-Karte ließ sich nicht einbetten.'):
-      tilesOk?`Gespeichert: ${name} (${fmt1.format(blob.size/1e6)} MB)`:'Gespeichert, aber die Topo-Karte ließ sich nicht einbetten. Heatmap ist drauf.',6000);
+    toast(where==='gallery'?`In der Galerie gespeichert (Bilder › Trail Log, ${fmt1.format(blob.size/1e6)} MB)`+(tilesOk?'':'. Die Karte ließ sich nicht ganz einbetten.'):
+      tilesOk?`Gespeichert: ${name} (${fmt1.format(blob.size/1e6)} MB)`:'Gespeichert, aber die Karte ließ sich nicht ganz einbetten. Heatmap ist drauf.',6000);
   }catch(e){
     busy.hide();
     if(String(e&&e.message)!=='abgebrochen') toast('Bild konnte nicht erstellt werden: '+(e&&e.message||e),6000);
