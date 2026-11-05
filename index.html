@@ -1559,8 +1559,9 @@ $('#btnBackup').onclick=async()=>{
   if(!S.acts.length){ toast('Noch keine Touren zum Sichern.'); return; }
   const blob=new Blob([JSON.stringify({format:'trail-log-backup',version:2,acts:S.acts.map(actToJSON)})],{type:'application/json'});
   const d=new Date();
-  try{ await saveBlob(blob,`trail-log-backup-${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}.json`); }catch(e){ toast('Das Backup konnte nicht gespeichert werden.',5000); return; }
-  toast(`${fmt0.format(S.acts.length)} Touren gesichert (${fmt1.format(blob.size/1e6)} MB).`,5000);
+  let where;
+  try{ where=await saveBlob(blob,`trail-log-backup-${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}.json`,{downloads:true}); }catch(e){ toast('Das Backup konnte nicht gespeichert werden.',5000); return; }
+  toast(`${fmt0.format(S.acts.length)} Touren gesichert (${fmt1.format(blob.size/1e6)} MB)`+(where==='downloads'?' · Downloads › Trail Log':'.'),6000);
 };
 $('#btnBackupIn').onclick=()=>$('#bakInput').click();
 $('#bakInput').addEventListener('change',async e=>{ const f=e.target.files[0]; e.target.value=''; if(f) await importBackup(f); });
@@ -1579,16 +1580,17 @@ $('#tShowHeat').onchange=e=>setShowHeat(e.target.checked);
 setShowHeat(ls.get('showHeat',true)!==false);
 
 /* ---------- Datei speichern: Browser = Download, Android-App = Teilen-Dialog (Speichern in Dateien, Drive, ...) ---------- */
-/* opt.gallery: Bilder in der App direkt in die Galerie (Bilder/Trail Log), ohne Teilen-Menü. Rückgabe 'gallery', wenn das geklappt hat. */
+/* In der App direkt speichern, ohne Teilen-Menü: opt.gallery -> Bilder/Trail Log, opt.downloads -> Download/Trail Log.
+   Rückgabe 'gallery' bzw. 'downloads', wenn das geklappt hat; sonst kommt als Notlösung das Teilen-Menü. */
 async function saveBlob(blob,name,opt){
   if(NATIVE){
     const FS=nativePlugin('Filesystem'), SH=nativePlugin('Share'); if(!FS||!SH) throw new Error('Datei-Plugin fehlt');
     const data=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]); r.onerror=()=>rej(r.error); r.readAsDataURL(blob); });
     const f=await FS.writeFile({path:name,data,directory:'CACHE'});
-    if(opt&&opt.gallery){
-      const G=typeof TW!=='undefined'&&TW?TW:nativePlugin('TrailWidget');
-      try{ if(G&&G.saveToGallery){ await G.saveToGallery({path:f.uri,name,mime:blob.type||'image/png'}); return 'gallery'; } }
-      catch(e){ console.warn('Galerie',e); }
+    if(opt&&(opt.gallery||opt.downloads)){
+      const G=typeof TW!=='undefined'&&TW?TW:nativePlugin('TrailWidget'), fn=opt.gallery?'saveToGallery':'saveToDownloads';
+      try{ if(G&&G[fn]){ await G[fn]({path:f.uri,name,mime:blob.type||(opt.gallery?'image/png':'application/json')}); return opt.gallery?'gallery':'downloads'; } }
+      catch(e){ console.warn('Speichern',e); }
     }
     try{ await SH.share({title:name,url:f.uri,dialogTitle:'Datei speichern oder teilen'}); }catch(e){ if(!/cancel/i.test(String(e&&e.message||e))) throw e; }
     return;

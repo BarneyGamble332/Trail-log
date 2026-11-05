@@ -166,32 +166,40 @@ jobs:
                   call.resolve();
               }
 
-              /* Bild aus dem App-Cache in die Galerie kopieren (Bilder/Trail Log), ohne Berechtigung ab Android 10 */
+              /* Datei aus dem App-Cache in einen öffentlichen Ordner kopieren, ohne Berechtigung ab Android 10:
+                 Bilder -> Bilder/Trail Log (Galerie), sonstige Dateien -> Download/Trail Log */
               @PluginMethod
-              public void saveToGallery(PluginCall call) {
+              public void saveToGallery(PluginCall call) { saveShared(call, true); }
+
+              @PluginMethod
+              public void saveToDownloads(PluginCall call) { saveShared(call, false); }
+
+              private void saveShared(PluginCall call, boolean image) {
                   if (Build.VERSION.SDK_INT < 29) { call.reject("Android-Version zu alt"); return; }
                   String src = call.getString("path");
-                  String name = call.getString("name", "trail-log.png");
-                  String mime = call.getString("mime", "image/png");
+                  String name = call.getString("name", image ? "trail-log.png" : "trail-log.json");
+                  String mime = call.getString("mime", image ? "image/png" : "application/json");
                   if (src == null) { call.reject("Kein Pfad"); return; }
                   File f = new File(Uri.parse(src).getPath());
                   ContentResolver cr = getContext().getContentResolver();
                   ContentValues v = new ContentValues();
-                  v.put(MediaStore.Images.Media.DISPLAY_NAME, name);
-                  v.put(MediaStore.Images.Media.MIME_TYPE, mime);
-                  v.put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Trail Log");
-                  v.put(MediaStore.Images.Media.IS_PENDING, 1);
+                  v.put(MediaStore.MediaColumns.DISPLAY_NAME, name);
+                  v.put(MediaStore.MediaColumns.MIME_TYPE, mime);
+                  v.put(MediaStore.MediaColumns.RELATIVE_PATH, image ? "Pictures/Trail Log" : "Download/Trail Log");
+                  v.put(MediaStore.MediaColumns.IS_PENDING, 1);
+                  Uri coll = image ? MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+                                   : MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY);
                   Uri out = null;
                   try {
-                      out = cr.insert(MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), v);
-                      if (out == null) throw new Exception("Galerie nicht verfügbar");
+                      out = cr.insert(coll, v);
+                      if (out == null) throw new Exception("Ordner nicht verfügbar");
                       try (InputStream in = new FileInputStream(f); OutputStream os = cr.openOutputStream(out)) {
                           byte[] buf = new byte[65536];
                           int n;
                           while ((n = in.read(buf)) > 0) os.write(buf, 0, n);
                       }
                       ContentValues done = new ContentValues();
-                      done.put(MediaStore.Images.Media.IS_PENDING, 0);
+                      done.put(MediaStore.MediaColumns.IS_PENDING, 0);
                       cr.update(out, done, null, null);
                       f.delete();
                       JSObject r = new JSObject();
