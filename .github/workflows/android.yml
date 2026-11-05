@@ -148,8 +148,9 @@ jobs:
               @PluginMethod
               public void update(PluginCall call) {
                   boolean running = call.getBoolean("running", false);
-                  double start = call.getDouble("start", 0.0);
-                  TrailWidgetProvider.save(getContext(), running, (long) start,
+                  // getDouble() liefert bei grossen ganzen Zahlen (Millisekunden) den Standardwert 0, daher optLong
+                  long start = call.getData().optLong("start", 0L);
+                  TrailWidgetProvider.save(getContext(), running, start,
                       call.getString("dist", "0,0"), call.getString("gain", "0"),
                       call.getString("m", ""), call.getString("mt", "–"),
                       call.getString("mk", "–"), call.getString("mh", "–"));
@@ -257,7 +258,7 @@ jobs:
               android:background="@drawable/widget_bg"
               android:gravity="center_vertical"
               android:orientation="horizontal"
-              android:padding="14dp">
+              android:padding="12dp">
 
               <LinearLayout
                   android:layout_width="0dp"
@@ -296,7 +297,7 @@ jobs:
                               android:includeFontPadding="false"
                               android:text="0"
                               android:textColor="#F4F6F7"
-                              android:textSize="22sp" />
+                              android:textSize="24sp" />
                           <TextView
                               android:layout_width="wrap_content"
                               android:layout_height="wrap_content"
@@ -320,7 +321,7 @@ jobs:
                               android:includeFontPadding="false"
                               android:text="0"
                               android:textColor="#F4F6F7"
-                              android:textSize="22sp" />
+                              android:textSize="24sp" />
                           <TextView
                               android:layout_width="wrap_content"
                               android:layout_height="wrap_content"
@@ -344,7 +345,7 @@ jobs:
                               android:includeFontPadding="false"
                               android:text="0"
                               android:textColor="#F4F6F7"
-                              android:textSize="22sp" />
+                              android:textSize="24sp" />
                           <TextView
                               android:layout_width="wrap_content"
                               android:layout_height="wrap_content"
@@ -371,12 +372,12 @@ jobs:
                           android:fontFamily="sans-serif-medium"
                           android:includeFontPadding="false"
                           android:textColor="#FFFFFF"
-                          android:textSize="38sp" />
+                          android:textSize="34sp" />
 
                       <LinearLayout
                           android:layout_width="wrap_content"
                           android:layout_height="wrap_content"
-                          android:layout_marginTop="6dp"
+                          android:layout_marginTop="4dp"
                           android:orientation="horizontal">
                       <LinearLayout
                           android:layout_width="wrap_content"
@@ -391,7 +392,7 @@ jobs:
                               android:includeFontPadding="false"
                               android:text="0"
                               android:textColor="#F4F6F7"
-                              android:textSize="18sp" />
+                              android:textSize="26sp" />
                           <TextView
                               android:layout_width="wrap_content"
                               android:layout_height="wrap_content"
@@ -415,7 +416,7 @@ jobs:
                               android:includeFontPadding="false"
                               android:text="0"
                               android:textColor="#F4F6F7"
-                              android:textSize="18sp" />
+                              android:textSize="26sp" />
                           <TextView
                               android:layout_width="wrap_content"
                               android:layout_height="wrap_content"
