@@ -60,6 +60,316 @@ jobs:
           PY
           # 3) Versionsnummer hochzaehlen, damit Updates ueber die alte Installation moeglich sind
           sed -i "s/versionCode 1/versionCode ${RUN_NUMBER:-1}/; s/versionName \"1.0\"/versionName \"1.${RUN_NUMBER:-1}\"/" android/app/build.gradle
+          # 4) Widget fuer den Startbildschirm: Java-Klassen, Layout, Manifest
+          PKG=android/app/src/main/java/de/bernhard/traillog
+          RES=android/app/src/main/res
+          MAN=android/app/src/main/AndroidManifest.xml
+          mkdir -p $RES/layout $RES/xml $RES/drawable
+
+          cat > $PKG/MainActivity.java <<'JAVA'
+          package de.bernhard.traillog;
+
+          import android.content.Intent;
+          import android.os.Bundle;
+          import com.getcapacitor.BridgeActivity;
+
+          public class MainActivity extends BridgeActivity {
+              @Override
+              public void onCreate(Bundle savedInstanceState) {
+                  registerPlugin(TrailWidgetPlugin.class);
+                  super.onCreate(savedInstanceState);
+                  if (savedInstanceState == null) handleWidgetIntent(getIntent());
+              }
+
+              @Override
+              protected void onNewIntent(Intent intent) {
+                  super.onNewIntent(intent);
+                  handleWidgetIntent(intent);
+              }
+
+              private void handleWidgetIntent(Intent intent) {
+                  if (intent == null) return;
+                  String a = intent.getStringExtra("tl_action");
+                  if (a != null) {
+                      intent.removeExtra("tl_action");
+                      TrailWidgetPlugin.post(a);
+                  }
+              }
+          }
+          JAVA
+
+          cat > $PKG/TrailWidgetPlugin.java <<'JAVA'
+          package de.bernhard.traillog;
+
+          import com.getcapacitor.JSObject;
+          import com.getcapacitor.Plugin;
+          import com.getcapacitor.PluginCall;
+          import com.getcapacitor.PluginMethod;
+          import com.getcapacitor.annotation.CapacitorPlugin;
+
+          @CapacitorPlugin(name = "TrailWidget")
+          public class TrailWidgetPlugin extends Plugin {
+              static TrailWidgetPlugin instance;
+              static String pending;
+
+              @Override
+              public void load() {
+                  instance = this;
+                  if (pending != null) {
+                      String a = pending;
+                      pending = null;
+                      fire(a);
+                  }
+              }
+
+              static void post(String action) {
+                  if (instance != null) instance.fire(action);
+                  else pending = action;
+              }
+
+              private void fire(String action) {
+                  JSObject o = new JSObject();
+                  o.put("action", action);
+                  notifyListeners("widgetAction", o, true);
+              }
+
+              @PluginMethod
+              public void update(PluginCall call) {
+                  boolean running = call.getBoolean("running", false);
+                  double start = call.getDouble("start", 0.0);
+                  String dist = call.getString("dist", "");
+                  String gain = call.getString("gain", "");
+                  String sub = call.getString("sub", "");
+                  TrailWidgetProvider.save(getContext(), running, (long) start, dist, gain, sub);
+                  call.resolve();
+              }
+          }
+          JAVA
+
+          cat > $PKG/TrailWidgetProvider.java <<'JAVA'
+          package de.bernhard.traillog;
+
+          import android.app.PendingIntent;
+          import android.appwidget.AppWidgetManager;
+          import android.appwidget.AppWidgetProvider;
+          import android.content.ComponentName;
+          import android.content.Context;
+          import android.content.Intent;
+          import android.content.SharedPreferences;
+          import android.os.SystemClock;
+          import android.view.View;
+          import android.widget.RemoteViews;
+
+          public class TrailWidgetProvider extends AppWidgetProvider {
+              static final String PREF = "tlwidget";
+
+              static void save(Context c, boolean running, long start, String dist, String gain, String sub) {
+                  c.getSharedPreferences(PREF, Context.MODE_PRIVATE).edit()
+                      .putBoolean("run", running)
+                      .putLong("start", start)
+                      .putString("dist", dist)
+                      .putString("gain", gain)
+                      .putString("sub", sub)
+                      .putLong("ts", System.currentTimeMillis())
+                      .apply();
+                  refresh(c);
+              }
+
+              static void refresh(Context c) {
+                  AppWidgetManager m = AppWidgetManager.getInstance(c);
+                  int[] ids = m.getAppWidgetIds(new ComponentName(c, TrailWidgetProvider.class));
+                  for (int id : ids) m.updateAppWidget(id, build(c));
+              }
+
+              @Override
+              public void onUpdate(Context c, AppWidgetManager m, int[] ids) {
+                  for (int id : ids) m.updateAppWidget(id, build(c));
+              }
+
+              static PendingIntent act(Context c, String action, int code) {
+                  Intent i = new Intent(c, MainActivity.class);
+                  i.setAction("de.bernhard.traillog.WIDGET_" + action);
+                  i.putExtra("tl_action", action);
+                  i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                  return PendingIntent.getActivity(c, code, i, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+              }
+
+              static RemoteViews build(Context c) {
+                  SharedPreferences p = c.getSharedPreferences(PREF, Context.MODE_PRIVATE);
+                  long now = System.currentTimeMillis();
+                  // Laeuft die App nicht mehr (Absturz), zeigt das Widget nach 5 Minuten wieder "bereit".
+                  boolean run = p.getBoolean("run", false) && now - p.getLong("ts", 0) < 5 * 60 * 1000;
+                  RemoteViews v = new RemoteViews(c.getPackageName(), R.layout.widget_tl);
+                  v.setOnClickPendingIntent(R.id.w_root, act(c, "open", 1));
+                  if (run) {
+                      v.setViewVisibility(R.id.w_idle, View.GONE);
+                      v.setViewVisibility(R.id.w_run, View.VISIBLE);
+                      long start = p.getLong("start", now);
+                      v.setChronometer(R.id.w_time, SystemClock.elapsedRealtime() - (now - start), null, true);
+                      v.setTextViewText(R.id.w_dist, p.getString("dist", ""));
+                      v.setTextViewText(R.id.w_gain, p.getString("gain", ""));
+                      v.setOnClickPendingIntent(R.id.w_stop, act(c, "stop", 3));
+                  } else {
+                      v.setViewVisibility(R.id.w_run, View.GONE);
+                      v.setViewVisibility(R.id.w_idle, View.VISIBLE);
+                      v.setTextViewText(R.id.w_sub, p.getString("sub", "Bereit zur Aufnahme"));
+                      v.setOnClickPendingIntent(R.id.w_start, act(c, "start", 2));
+                  }
+                  return v;
+              }
+          }
+          JAVA
+
+          cat > $RES/layout/widget_tl.xml <<'XML'
+          <?xml version="1.0" encoding="utf-8"?>
+          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:id="@+id/w_root"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:orientation="vertical"
+              android:padding="12dp"
+              android:background="@drawable/widget_bg">
+
+              <TextView
+                  android:layout_width="wrap_content"
+                  android:layout_height="wrap_content"
+                  android:text="TRAIL LOG"
+                  android:textColor="#F2C000"
+                  android:textSize="11sp"
+                  android:textStyle="bold" />
+
+              <LinearLayout
+                  android:id="@+id/w_idle"
+                  android:layout_width="match_parent"
+                  android:layout_height="0dp"
+                  android:layout_weight="1"
+                  android:gravity="center_vertical"
+                  android:orientation="vertical">
+
+                  <TextView
+                      android:id="@+id/w_sub"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:layout_marginBottom="8dp"
+                      android:maxLines="2"
+                      android:textColor="#FFFFFF"
+                      android:textSize="14sp" />
+
+                  <TextView
+                      android:id="@+id/w_start"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:background="@drawable/widget_btn"
+                      android:gravity="center"
+                      android:padding="10dp"
+                      android:text="Aufnahme starten"
+                      android:textColor="#FFFFFF"
+                      android:textSize="16sp"
+                      android:textStyle="bold" />
+              </LinearLayout>
+
+              <LinearLayout
+                  android:id="@+id/w_run"
+                  android:layout_width="match_parent"
+                  android:layout_height="0dp"
+                  android:layout_weight="1"
+                  android:gravity="center_vertical"
+                  android:orientation="horizontal"
+                  android:visibility="gone">
+
+                  <LinearLayout
+                      android:layout_width="0dp"
+                      android:layout_height="wrap_content"
+                      android:layout_weight="1"
+                      android:orientation="vertical">
+
+                      <Chronometer
+                          android:id="@+id/w_time"
+                          android:layout_width="wrap_content"
+                          android:layout_height="wrap_content"
+                          android:textColor="#FFFFFF"
+                          android:textSize="30sp"
+                          android:textStyle="bold" />
+
+                      <TextView
+                          android:id="@+id/w_dist"
+                          android:layout_width="wrap_content"
+                          android:layout_height="wrap_content"
+                          android:textColor="#FFFFFF"
+                          android:textSize="16sp" />
+
+                      <TextView
+                          android:id="@+id/w_gain"
+                          android:layout_width="wrap_content"
+                          android:layout_height="wrap_content"
+                          android:textColor="#BBBBBB"
+                          android:textSize="14sp" />
+                  </LinearLayout>
+
+                  <TextView
+                      android:id="@+id/w_stop"
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:background="@drawable/widget_btn"
+                      android:gravity="center"
+                      android:paddingBottom="12dp"
+                      android:paddingLeft="20dp"
+                      android:paddingRight="20dp"
+                      android:paddingTop="12dp"
+                      android:text="Stopp"
+                      android:textColor="#FFFFFF"
+                      android:textSize="16sp"
+                      android:textStyle="bold" />
+              </LinearLayout>
+          </LinearLayout>
+          XML
+
+          cat > $RES/drawable/widget_bg.xml <<'XML'
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+              <solid android:color="#1B1F24" />
+              <corners android:radius="20dp" />
+          </shape>
+          XML
+
+          cat > $RES/drawable/widget_btn.xml <<'XML'
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+              <solid android:color="#D93025" />
+              <corners android:radius="14dp" />
+          </shape>
+          XML
+
+          cat > $RES/xml/widget_tl_info.xml <<'XML'
+          <?xml version="1.0" encoding="utf-8"?>
+          <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+              android:minWidth="250dp"
+              android:minHeight="110dp"
+              android:targetCellWidth="4"
+              android:targetCellHeight="2"
+              android:updatePeriodMillis="1800000"
+              android:initialLayout="@layout/widget_tl"
+              android:resizeMode="horizontal|vertical"
+              android:widgetCategory="home_screen"
+              android:description="@string/widget_desc" />
+          XML
+
+          python3 - <<'PY'
+          m='android/app/src/main/AndroidManifest.xml'
+          s=open(m).read()
+          rec='''        <receiver android:name=".TrailWidgetProvider" android:exported="false">
+                      <intent-filter>
+                          <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                      </intent-filter>
+                      <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_tl_info" />
+                  </receiver>
+              </application>'''
+          assert '</application>' in s
+          open(m,'w').write(s.replace('</application>',rec,1))
+          st='android/app/src/main/res/values/strings.xml'
+          t=open(st).read()
+          open(st,'w').write(t.replace('</resources>','    <string name="widget_desc">Aufnahme starten und Live-Daten anzeigen</string>\n</resources>',1))
+          PY
 
       - name: Signaturschluessel einsetzen (gleich bei jedem Build, damit Updates klappen)
         run: |
