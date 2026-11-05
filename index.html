@@ -1279,9 +1279,10 @@ async function exportImage(){
     out.width=out.height=1;
     if(!blob) throw new Error('Bild zu groß für diesen Browser, kleinere Größe wählen');
     const d=new Date(), name=`trail-log-heatmap-${EX_SIZES[EX.size].label.toLowerCase()}-${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}.png`;
-    await saveBlob(blob,name);
+    const where=await saveBlob(blob,name,{gallery:true});
     busy.hide();
-    toast(tilesOk?`Gespeichert: ${name} (${fmt1.format(blob.size/1e6)} MB)`:'Gespeichert, aber die Topo-Karte ließ sich nicht einbetten. Heatmap ist drauf.',6000);
+    toast(where==='gallery'?`In der Galerie gespeichert (Bilder › Trail Log, ${fmt1.format(blob.size/1e6)} MB)`+(tilesOk?'':'. Die Topo-Karte ließ sich nicht einbetten.'):
+      tilesOk?`Gespeichert: ${name} (${fmt1.format(blob.size/1e6)} MB)`:'Gespeichert, aber die Topo-Karte ließ sich nicht einbetten. Heatmap ist drauf.',6000);
   }catch(e){
     busy.hide();
     if(String(e&&e.message)!=='abgebrochen') toast('Bild konnte nicht erstellt werden: '+(e&&e.message||e),6000);
@@ -1578,11 +1579,17 @@ $('#tShowHeat').onchange=e=>setShowHeat(e.target.checked);
 setShowHeat(ls.get('showHeat',true)!==false);
 
 /* ---------- Datei speichern: Browser = Download, Android-App = Teilen-Dialog (Speichern in Dateien, Drive, ...) ---------- */
-async function saveBlob(blob,name){
+/* opt.gallery: Bilder in der App direkt in die Galerie (Bilder/Trail Log), ohne Teilen-Menü. Rückgabe 'gallery', wenn das geklappt hat. */
+async function saveBlob(blob,name,opt){
   if(NATIVE){
     const FS=nativePlugin('Filesystem'), SH=nativePlugin('Share'); if(!FS||!SH) throw new Error('Datei-Plugin fehlt');
     const data=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]); r.onerror=()=>rej(r.error); r.readAsDataURL(blob); });
     const f=await FS.writeFile({path:name,data,directory:'CACHE'});
+    if(opt&&opt.gallery){
+      const G=typeof TW!=='undefined'&&TW?TW:nativePlugin('TrailWidget');
+      try{ if(G&&G.saveToGallery){ await G.saveToGallery({path:f.uri,name,mime:blob.type||'image/png'}); return 'gallery'; } }
+      catch(e){ console.warn('Galerie',e); }
+    }
     try{ await SH.share({title:name,url:f.uri,dialogTitle:'Datei speichern oder teilen'}); }catch(e){ if(!/cancel/i.test(String(e&&e.message||e))) throw e; }
     return;
   }

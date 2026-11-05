@@ -113,6 +113,15 @@ jobs:
           cat > $PKG/TrailWidgetPlugin.java <<'JAVA'
           package de.bernhard.traillog;
 
+          import android.content.ContentResolver;
+          import android.content.ContentValues;
+          import android.net.Uri;
+          import android.os.Build;
+          import android.provider.MediaStore;
+          import java.io.File;
+          import java.io.FileInputStream;
+          import java.io.InputStream;
+          import java.io.OutputStream;
           import com.getcapacitor.JSObject;
           import com.getcapacitor.Plugin;
           import com.getcapacitor.PluginCall;
@@ -155,6 +164,43 @@ jobs:
                       call.getString("m", ""), call.getString("mt", "–"),
                       call.getString("mk", "–"), call.getString("mh", "–"));
                   call.resolve();
+              }
+
+              /* Bild aus dem App-Cache in die Galerie kopieren (Bilder/Trail Log), ohne Berechtigung ab Android 10 */
+              @PluginMethod
+              public void saveToGallery(PluginCall call) {
+                  if (Build.VERSION.SDK_INT < 29) { call.reject("Android-Version zu alt"); return; }
+                  String src = call.getString("path");
+                  String name = call.getString("name", "trail-log.png");
+                  String mime = call.getString("mime", "image/png");
+                  if (src == null) { call.reject("Kein Pfad"); return; }
+                  File f = new File(Uri.parse(src).getPath());
+                  ContentResolver cr = getContext().getContentResolver();
+                  ContentValues v = new ContentValues();
+                  v.put(MediaStore.Images.Media.DISPLAY_NAME, name);
+                  v.put(MediaStore.Images.Media.MIME_TYPE, mime);
+                  v.put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Trail Log");
+                  v.put(MediaStore.Images.Media.IS_PENDING, 1);
+                  Uri out = null;
+                  try {
+                      out = cr.insert(MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), v);
+                      if (out == null) throw new Exception("Galerie nicht verfügbar");
+                      try (InputStream in = new FileInputStream(f); OutputStream os = cr.openOutputStream(out)) {
+                          byte[] buf = new byte[65536];
+                          int n;
+                          while ((n = in.read(buf)) > 0) os.write(buf, 0, n);
+                      }
+                      ContentValues done = new ContentValues();
+                      done.put(MediaStore.Images.Media.IS_PENDING, 0);
+                      cr.update(out, done, null, null);
+                      f.delete();
+                      JSObject r = new JSObject();
+                      r.put("uri", out.toString());
+                      call.resolve(r);
+                  } catch (Exception e) {
+                      if (out != null) { try { cr.delete(out, null, null); } catch (Exception ignore) {} }
+                      call.reject("Speichern fehlgeschlagen: " + e.getMessage());
+                  }
               }
           }
           JAVA
