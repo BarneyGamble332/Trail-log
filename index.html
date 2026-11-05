@@ -1394,8 +1394,17 @@ $('#rpDrop').onclick=()=>{ if($('#rpDrop').dataset.arm){ delete $('#rpDrop').dat
 $('#btnSet').onclick=()=>{ const on=!$('#pane-data').hidden; if(on&&sheet.classList.contains('open')&&window.innerWidth<900){ sheet.classList.remove('open'); } else { openTab('data'); sheet.classList.add('open'); } };
 /* Native Android-App (Capacitor): Standort laeuft als Vordergrunddienst weiter, auch bei ausgeschaltetem Bildschirm */
 const NATIVE=!!(window.Capacitor&&Capacitor.isNativePlatform&&Capacitor.isNativePlatform());
+/* In der Android-App stellt Capacitor die Plugins als Capacitor.Plugins.<Name> bereit (registerPlugin gibt es dort nicht) */
+function nativePlugin(name){
+  try{
+    if(!window.Capacitor) return null;
+    if(Capacitor.Plugins&&Capacitor.Plugins[name]) return Capacitor.Plugins[name];
+    if(typeof Capacitor.registerPlugin==='function') return Capacitor.registerPlugin(name);
+  }catch(e){}
+  return null;
+}
 let BG=null;
-if(NATIVE){ try{ BG=Capacitor.registerPlugin?Capacitor.registerPlugin('BackgroundGeolocation'):(Capacitor.Plugins&&Capacitor.Plugins.BackgroundGeolocation); }catch(e){ BG=(Capacitor.Plugins&&Capacitor.Plugins.BackgroundGeolocation)||null; } }
+if(NATIVE){ BG=nativePlugin('BackgroundGeolocation'); }
 const REC={bgId:null,on:false,pts:[],t0:0,dist:0,watch:null,wl:null,tick:null,follow:true,line:null,dot:null,errT:0,rej:0,gain:0,ref:null,ab:[],type:ls.get('rec.type','mountainbikeride')};
 $('#rcType').value=REC.type;
 function recHttps(){ return location.protocol==='https:'||/^(localhost|127\.0\.0\.1)$/.test(location.hostname); }
@@ -1539,7 +1548,7 @@ setShowHeat(ls.get('showHeat',true)!==false);
 /* ---------- Datei speichern: Browser = Download, Android-App = Teilen-Dialog (Speichern in Dateien, Drive, ...) ---------- */
 async function saveBlob(blob,name){
   if(NATIVE){
-    const FS=Capacitor.registerPlugin('Filesystem'), SH=Capacitor.registerPlugin('Share');
+    const FS=nativePlugin('Filesystem'), SH=nativePlugin('Share'); if(!FS||!SH) throw new Error('Datei-Plugin fehlt');
     const data=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]); r.onerror=()=>rej(r.error); r.readAsDataURL(blob); });
     const f=await FS.writeFile({path:name,data,directory:'CACHE'});
     try{ await SH.share({title:name,url:f.uri,dialogTitle:'Datei speichern oder teilen'}); }catch(e){ if(!/cancel/i.test(String(e&&e.message||e))) throw e; }
@@ -1554,7 +1563,7 @@ if($('#verNum').textContent.startsWith('__')) $('#verNum').textContent='Web';
 /* ---------- Android-Widget (Startbildschirm): Aufnahme starten/stoppen, Live-Daten ---------- */
 var TW=null;
 var TWerr='';
-if(NATIVE){ try{ TW=Capacitor.registerPlugin('TrailWidget'); if(!TW) TWerr='leer'; }catch(e){ TW=null; TWerr=String(e&&e.message||e).slice(0,70); } }
+if(NATIVE){ TW=nativePlugin('TrailWidget'); if(!TW) TWerr='Plugin nicht gefunden'; }
 var wLast=0;
 function widgetPush(force,raw){
   if(!TW) return raw?Promise.reject(new Error('kein Plugin')):undefined;
