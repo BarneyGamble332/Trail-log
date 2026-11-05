@@ -145,17 +145,6 @@ details summary{cursor:pointer;font-weight:600;padding:4px 0}
 .btn:disabled{opacity:.5;cursor:default}
 .stack{display:flex;flex-direction:column;gap:8px}
 ol.how{margin:0;padding-left:20px;color:var(--muted);font-size:14px;display:flex;flex-direction:column;gap:4px}
-.mtbrow{margin-top:12px}
-.legend{display:flex;flex-wrap:wrap;gap:6px 12px;font:500 13px/1 var(--f-body);color:var(--muted);margin:6px 0 8px}
-.legend i{display:inline-block;width:18px;height:5px;border-radius:3px;margin-right:5px;vertical-align:middle}
-.legend i.dash{height:0;border-top:2px dashed #3b3a36;border-radius:0}
-.kcard{border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:8px}
-.kcard b{font:700 17px/1.1 var(--f-display);letter-spacing:.03em}
-.kcard .kst{font-size:13px;color:var(--muted)}
-.kcard .kst.ok{color:var(--ok)}
-.kbtns{display:flex;gap:8px;flex-wrap:wrap}.kbtns .btn{flex:1 1 30%;width:auto;padding:10px 8px}
-.pp-trail dl{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;margin:6px 0 0;font-size:13px}.pp-trail dt{color:#6b7177}.pp-trail dd{margin:0}
-.pp-trail .s{display:inline-block;padding:1px 7px;border-radius:9px;color:#fff;font-weight:700}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:14px}
 .kv dt{color:var(--muted)}.kv dd{margin:0;text-align:right;font-family:var(--f-num);font-size:13px}
 
@@ -245,7 +234,6 @@ canvas.prof{width:100%;height:120px;display:block}
 <div class="brand">
   <div class="sign">Trail Log</div>
   <div class="loading" id="loadChip" hidden>Lade Gipfel &amp; Almen …</div>
-  <div class="loading" id="mtbChip" hidden></div>
   <div class="rec-hud" id="recHud" hidden><span class="rdot"></span><b id="rhD">0,0 km</b><b id="rhH">0 Hm</b><span id="rhT">0:00</span><button class="ic" id="rhFollow" hidden aria-label="Karte folgt wieder der Position">⌖</button><button id="rhStop">Stopp</button></div>
 </div>
 
@@ -295,7 +283,7 @@ canvas.prof{width:100%;height:120px;display:block}
       </div>
       <div><h3>Hintergrund</h3>
         <div class="seg" id="baseSeg">
-          <button data-base="topo" id="base-topo">Topo</button><button data-base="mtb" id="base-mtb">MTB</button><button data-base="plain" id="base-plain">Einfarbig</button>
+          <button data-base="topo" id="base-topo">Topo</button><button data-base="plain" id="base-plain">Einfarbig</button>
         </div>
         <div class="bgrow" id="bgRow" hidden>
           <div class="swatches" id="bgSwatches">
@@ -314,15 +302,6 @@ canvas.prof{width:100%;height:120px;display:block}
           <div class="switches">
             <label class="switch"><span>Karte in Graustufen</span><input type="checkbox" id="tGray"></label>
           </div>
-        </div>
-        <div id="mtbRow" class="mtbrow" hidden>
-          <div class="switches">
-            <label class="switch"><span>Trails nach S-Skala färben</span><input type="checkbox" id="tMtbScale"></label>
-            <label class="switch"><span>Höhenlinien</span><input type="checkbox" id="tMtbContours"></label>
-            <label class="switch"><span>Namen (Orte, Gipfel, Hütten, Wege)</span><input type="checkbox" id="tMtbLabels"></label>
-          </div>
-          <div class="legend" id="mtbLegend"><span><i style="background:#2e9e46"></i>S0</span><span><i style="background:#1f6fd1"></i>S1</span><span><i style="background:#d93025"></i>S2</span><span><i style="background:#1b1b1b"></i>S3</span><span><i style="background:#8e24aa"></i>S4+</span><span><i class="dash"></i>ohne Angabe</span></div>
-          <p class="note" id="mtbNote"></p>
         </div>
         <div class="switches">
           <label class="switch"><span>Dunkle Kontur um die Heatmap</span><input type="checkbox" id="tHalo"></label>
@@ -365,11 +344,6 @@ canvas.prof{width:100%;height:120px;display:block}
       </div>
       <div><h3>Darstellung</h3>
         <div class="seg" id="themeSeg"><button data-v="auto">Automatisch</button><button data-v="light">Hell</button><button data-v="dark">Dunkel</button></div>
-      </div>
-      <div class="stack">
-        <h3 style="margin:0">Offline-Karten (MTB)</h3>
-        <div id="kartenList" class="stack"><p class="note">Wird geladen …</p></div>
-        <p class="note">Die MTB-Karte entsteht aus OpenStreetMap und Höhendaten und wird jeden Monat neu gebaut. Nach dem Download geht sie ohne Netz. Anzeigen: Filter → Hintergrund → MTB. Tippst du auf einen Weg, siehst du S-Skala, Untergrund und Wegzustand.</p>
       </div>
       <div class="stack">
         <h3 style="margin:0">Backup</h3>
@@ -645,8 +619,7 @@ const S={acts:[],pois:new Map(),cells:new Set(),needed:new Set(),
   intensity:ls.get('intensity',0.1),base:ls.get('base','topo'),
   fade:ls.get('fade',0.4),gray:ls.get('gray',true),halo:ls.get('halo',true),
   scheme:ls.get('scheme','glut'),revBy:ls.get('revBy',{eis:false}),heatColor:ls.get('heatColor','#e8402a'),bgColor:ls.get('bgColor','#0b0d14'),
-  showPeaks:ls.get('peaks',true),showAlms:ls.get('alms',true),onlyVisited:ls.get('visited',false),
-  mtb:Object.assign({scale:true,contours:true,labels:true},ls.get('mtb',{}))};
+  showPeaks:ls.get('peaks',true),showAlms:ls.get('alms',true),onlyVisited:ls.get('visited',false)};
 let visible=[], visibleIdx=new Set(), byId=new Map();
 let grid=new Map();
 const GY=0.002, GX=0.003, gkey=(gy,gx)=>gy*1e6+gx;
@@ -706,20 +679,17 @@ const bases={
 };
 let curBase=null;
 function setBase(k){
-  if(k!=='plain'&&k!=='mtb'&&!bases[k]) k='topo';
+  if(k!=='plain'&&!bases[k]) k='topo';
   if(curBase){ map.removeLayer(curBase); curBase=null; }
-  if(k==='mtb') mtbAttach();
-  else if(k!=='plain'){ curBase=bases[k].addTo(map); curBase.bringToBack(); }
+  if(k!=='plain'){ curBase=bases[k].addTo(map); curBase.bringToBack(); }
   // abgeblendete Topo-Karte verblasst Richtung Weiß
   map.getContainer().style.background=k==='plain'?S.bgColor:'#fff';
   S.base=k; ls.set('base',k);
   document.querySelectorAll('#baseSeg button').forEach(b=>b.classList.toggle('on',b.dataset.base===k));
-  $('#bgRow').hidden=k!=='plain'; $('#lookRow').hidden=k!=='topo'; $('#mtbRow').hidden=k!=='mtb'; markSwatches(); applyLook();
-  if(k!=='mtb') $('#mtbChip').hidden=true;
+  $('#bgRow').hidden=k!=='plain'; $('#lookRow').hidden=k==='plain'; markSwatches(); applyLook();
 }
 function applyLook(){
-  // Die MTB-Karte bleibt farbig und voll sichtbar, sonst gehen die S-Skala-Farben verloren
-  const mtb=S.base==='mtb', tp=map.getPane('tilePane'); tp.style.opacity=mtb?'1':String(1-S.fade); tp.style.filter=S.gray&&!mtb?'grayscale(1)':'';
+  const tp=map.getPane('tilePane'); tp.style.opacity=String(1-S.fade); tp.style.filter=S.gray?'grayscale(1)':'';
   $('#fadeOut').textContent=Math.round(S.fade*100)+' %';
   if(typeof heat!=='undefined'&&heat._c) heat._c.style.filter=S.halo?'drop-shadow(0 0 1.5px rgba(0,0,0,.75))':'';
 }
@@ -908,15 +878,14 @@ function poiPopup(p){
 
 /* Tippen auf die Karte: welche Touren führen hier vorbei? */
 map.on('click',e=>{
-  const trail=mtbTrailInfo(e.latlng);
-  if(!visible.length){ if(trail) L.popup({maxWidth:280}).setLatLng(e.latlng).setContent(trail).openOn(map); return; }
+  if(!visible.length) return;
   const z=map.getZoom();
-  if(z<12){ L.popup().setLatLng(e.latlng).setContent(trail||'<span class="muted">Zum Abfragen der Touren weiter hineinzoomen.</span>').openOn(map); return; }
+  if(z<12){ L.popup().setLatLng(e.latlng).setContent('<span class="muted">Zum Abfragen der Touren weiter hineinzoomen.</span>').openOn(map); return; }
   const lat=e.latlng.lat, lon=e.latlng.lng, mpp=40075016.7*Math.cos(lat*D2R)/(256*Math.pow(2,z)), tol=Math.max(15,12*mpp);
   const ring=Math.min(3,Math.ceil(tol/220));
   const hits=[...candidates(lat,lon,ring)].filter(i=>visibleIdx.has(i)).map(i=>S.acts[i]).filter(a=>minDist(a,lat,lon,tol)<=tol).sort((a,b)=>b.d-a.d);
-  if(!hits.length){ if(trail) L.popup({maxWidth:280}).setLatLng(e.latlng).setContent(trail).openOn(map); return; }
-  L.popup({maxWidth:280}).setLatLng(e.latlng).setContent(trail+`<div class="pp"><div class="pp-k">Hier vorbei</div><div class="pp-n">${hits.length} ${hits.length===1?'Tour':'Touren'}</div><ul>${hits.slice(0,8).map(actLi).join('')}</ul>${hits.length>8?`<div class="muted" style="margin-top:6px">und ${hits.length-8} weitere</div>`:''}</div>`).openOn(map);
+  if(!hits.length) return;
+  L.popup({maxWidth:280}).setLatLng(e.latlng).setContent(`<div class="pp"><div class="pp-k">Hier vorbei</div><div class="pp-n">${hits.length} ${hits.length===1?'Tour':'Touren'}</div><ul>${hits.slice(0,8).map(actLi).join('')}</ul>${hits.length>8?`<div class="muted" style="margin-top:6px">und ${hits.length-8} weitere</div>`:''}</div>`).openOn(map);
 });
 
 /* ---------- Filter ---------- */
@@ -925,7 +894,7 @@ function applyFilter(){
   visible=[]; visibleIdx=new Set();
   S.acts.forEach((a,i)=>{ if(S.types.size&&!S.types.has(a.t)) return; if(S.years.size&&!S.years.has(yearOf(a))) return; visible.push(a); visibleIdx.add(i); });
   ls.set('types',[...S.types]); ls.set('years',[...S.years]);
-  heat.redraw(); renderPois(); renderStats(); renderSummary(); renderTours(); widgetPush();
+  heat.redraw(); renderPois(); renderStats(); renderSummary(); renderTours(); widgetPush(true);
 }
 const chip=(v,l,n,on)=>`<button class="chip${on?' on':''}" data-v="${esc(v)}" aria-pressed="${on}">${esc(l)}<span>${fmt0.format(n)}</span></button>`;
 function renderChips(){
@@ -1626,300 +1595,6 @@ if(NATIVE){
     Promise.resolve(p).then(()=>setV('Widget verbunden'),e=>setV('Widget-Fehler: '+String(e&&e.message||e).slice(0,80))); },2000); }
 }
 
-/* ---------- MTB-Karte (offline, aus OpenStreetMap) ----------
-   Die Karte liegt als PMTiles-Datei in 48-MB-Teilen auf GitHub Pages (karte/daten).
-   Vorschau: Teile werden online stückweise gelesen. Download: alle Teile kommen in IndexedDB
-   und werden von dort gelesen, die Karte geht dann ohne Netz. Gezeichnet wird mit MapLibre
-   innerhalb von Leaflet, damit Heatmap, Touren und Aufnahme unverändert bleiben. */
-const KARTE_WEB='https://barneygamble332.github.io/Trail-log/';
-const KBASE=location.hostname.endsWith('github.io')?new URL('./',location.href).href:KARTE_WEB;
-const KFONTS=(location.hostname.endsWith('github.io')||location.hostname==='localhost')?new URL('karte/fonts/',location.href).href:KBASE+'karte/fonts/';
-const KLIB={css:'https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.css',
-  gl:'https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.js',
-  gll:'https://cdn.jsdelivr.net/npm/@maplibre/maplibre-gl-leaflet@0.1.4/dist/leaflet-maplibre-gl.js',
-  pm:'https://cdn.jsdelivr.net/npm/pmtiles@4.5.0/dist/pmtiles.js'};
-const K={idx:null,idxErr:null,local:new Map(),proto:null,libs:null,seq:0,srcKey:null,remote:false,preview:null,busy:false};
-const mb=n=>fmt0.format(n/1e6);
-const K_ATTR='Karte © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap-Mitwirkende</a> · Höhen © Copernicus DEM';
-
-function kScript(src){ return new Promise((res,rej)=>{ const s=document.createElement('script'); s.src=src; s.onload=res; s.onerror=()=>rej(new Error('Laden fehlgeschlagen: '+src)); document.head.appendChild(s); }); }
-function kLibs(){
-  if(!K.libs){
-    const l=document.createElement('link'); l.rel='stylesheet'; l.href=KLIB.css; document.head.appendChild(l);
-    K.libs=(async()=>{ if(!window.maplibregl) await kScript(KLIB.gl); if(!window.pmtiles) await kScript(KLIB.pm); if(!L.maplibreGL) await kScript(KLIB.gll);
-      K.proto=new pmtiles.Protocol(); maplibregl.addProtocol('pmtiles',K.proto.tile); })();
-    K.libs.catch(()=>{ K.libs=null; });
-  }
-  return K.libs;
-}
-
-/* eigene IndexedDB, damit die Touren-Datenbank unberührt bleibt */
-const kdb={db:null,
-  open(){ if(this.db) return Promise.resolve(); return new Promise((res,rej)=>{ const r=indexedDB.open('trail-karten',1);
-    r.onupgradeneeded=()=>{ const d=r.result; d.createObjectStore('parts'); d.createObjectStore('karten',{keyPath:'id'}); };
-    r.onsuccess=()=>{ this.db=r.result; res(); }; r.onerror=()=>rej(r.error); }); },
-  req(st,mode,fn){ return this.open().then(()=>new Promise((res,rej)=>{ const tx=this.db.transaction(st,mode), r=fn(tx.objectStore(st)); let out;
-    if(r) r.onsuccess=()=>{ out=r.result; }; tx.oncomplete=()=>res(out); tx.onerror=tx.onabort=()=>rej(tx.error||new Error('IndexedDB')); })); },
-  get(st,k){ return this.req(st,'readonly',o=>o.get(k)); },
-  all(st){ return this.req(st,'readonly',o=>o.getAll()); },
-  put(st,v,k){ return this.req(st,'readwrite',o=>k===undefined?o.put(v):o.put(v,k)); },
-  del(st,k){ return this.req(st,'readwrite',o=>{ o.delete(k); }); },
-  keys(st,range){ return this.req(st,'readonly',o=>o.getAllKeys(range)); }
-};
-const partKey=(m,i)=>m.id+'@'+m.version+':'+i;
-const partLen=(m,i)=>i<m.files.length-1?m.part_size:m.size-m.part_size*(m.files.length-1);
-
-/* PMTiles-Quelle über mehrere Teile: online (Range-Anfragen) oder lokal (Blobs aus IndexedDB) */
-class KartenQuelle{
-  constructor(m,blobs){ this.m=m; this.blobs=blobs||null; this.key='tl-'+m.id+'-'+m.version+(blobs?'-lokal':'-online'); }
-  getKey(){ return this.key; }
-  async part(i,a,n,signal){
-    if(this.blobs) return this.blobs[i].slice(a,a+n).arrayBuffer();
-    const r=await fetch(KBASE+'karte/daten/'+this.m.files[i],{headers:{Range:`bytes=${a}-${a+n-1}`},signal});
-    if(!r.ok) throw new Error('Karte HTTP '+r.status);
-    const b=await r.arrayBuffer();
-    return r.status===206?b:b.slice(a,a+n);
-  }
-  async getBytes(off,len,signal){
-    const P=this.m.part_size, end=Math.min(off+len,this.m.size), out=new Uint8Array(Math.max(0,end-off)); let pos=off;
-    while(pos<end){ const i=Math.floor(pos/P), a=pos-i*P, n=Math.min(end-pos,P-a);
-      out.set(new Uint8Array(await this.part(i,a,n,signal)),pos-off); pos+=n; }
-    return {data:out.buffer};
-  }
-}
-
-async function kLoadLocal(){
-  K.local.clear();
-  try{
-    for(const rec of await kdb.all('karten')){
-      const ent={rec,blobs:null};
-      if(rec.m){ const b=[]; for(let i=0;i<rec.m.files.length;i++){ const x=await kdb.get('parts',partKey(rec.m,i)); if(!x){ b.length=0; break; } b.push(x); }
-        if(b.length===rec.m.files.length) ent.blobs=b; }
-      K.local.set(rec.id,ent);
-    }
-  }catch(e){ console.warn(e); }
-}
-async function kLoadIndex(){
-  try{ const r=await fetch(KBASE+'karte/daten/index.json',{cache:'no-cache'}); if(!r.ok) throw new Error('HTTP '+r.status);
-    K.idx=await r.json(); K.idxErr=null; }
-  catch(e){ K.idxErr=e; if(!K.idx) K.idx=null; }
-}
-const kRemote=id=>(K.idx||[]).find(m=>m.id===id);
-function kRegions(){ const ids=new Set([...(K.idx||[]).map(m=>m.id),...K.local.keys()]); return [...ids]; }
-
-/* Welche Kartendaten zeigen? Heruntergeladen geht vor, sonst online. */
-function kPickSource(){
-  const want=K.preview||ls.get('mtbRegion',null);
-  const ids=kRegions(); if(want&&ids.includes(want)){ ids.splice(ids.indexOf(want),1); ids.unshift(want); }
-  for(const id of ids){ const l=K.local.get(id); if(l&&l.blobs) return new KartenQuelle(l.rec.m,l.blobs); }
-  for(const id of ids){ const m=kRemote(id); if(m) return new KartenQuelle(m,null); }
-  return null;
-}
-
-/* S-Skala-Ziffer; manche Wege sind als "S2" statt "2" eingetragen */
-const MTB_S=['let','v',['downcase',['to-string',['get','mtb']]],['case',['==',['slice',['var','v'],0,1],'s'],['slice',['var','v'],1,2],['slice',['var','v'],0,1]]];
-const MTB_COL=['match',MTB_S,'0','#2e9e46','1','#1f6fd1','2','#d93025','3','#1b1b1b','#8e24aa'];
-const ROADS_BIG=['motorway','motorway_link','trunk','trunk_link','primary','primary_link','secondary','secondary_link'];
-const ROADS_MINOR=['tertiary','tertiary_link','unclassified','residential','living_street','service','pedestrian'];
-const PATHS=['path','footway','bridleway','steps'];
-function mtbStyle(key){
-  const o=S.mtb, src='t', vis=b=>({visibility:b?'visible':'none'}), Z=(...a)=>['interpolate',['linear'],['zoom'],...a];
-  const halo={'text-halo-color':'rgba(246,244,238,.92)','text-halo-width':1.4};
-  const cls=list=>['in',['get','class'],['literal',list]];
-  const lay=[
-    {id:'bg',type:'background',paint:{'background-color':'#f3f1ea'}},
-    {id:'lc',type:'fill',source:src,'source-layer':'landcover',paint:{'fill-color':['match',['get','class'],'forest','#cadfbb','grass','#e3ecd4','rock','#e2ddd3','glacier','#eef5fa','#e8e2d8']}},
-    {id:'water',type:'fill',source:src,'source-layer':'water',paint:{'fill-color':'#a6cde6'}},
-    {id:'waterway',type:'line',source:src,'source-layer':'waterway',paint:{'line-color':'#7eb0d6','line-width':Z(9,['match',['get','class'],'river',0.8,0.3],15,['match',['get','class'],'river',3.4,1.2])}},
-    {id:'ct-minor',type:'line',source:src,'source-layer':'contour',filter:['==',['get','idx'],0],layout:vis(o.contours),paint:{'line-color':'#c4a27c','line-opacity':0.55,'line-width':Z(12,0.35,15,0.7)}},
-    {id:'ct-major',type:'line',source:src,'source-layer':'contour',filter:['==',['get','idx'],1],layout:vis(o.contours),paint:{'line-color':'#ab845b','line-opacity':0.75,'line-width':Z(10,0.5,15,1.1)}},
-    {id:'building',type:'fill',source:src,'source-layer':'building',minzoom:13,paint:{'fill-color':'#d5cec2','fill-outline-color':'#c4bcae'}},
-    {id:'rd-minor-case',type:'line',source:src,'source-layer':'road',filter:cls(ROADS_MINOR),layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':'#bdb6a8','line-width':Z(10,1.2,13,3,16,9)}},
-    {id:'rd-big-case',type:'line',source:src,'source-layer':'road',filter:cls(ROADS_BIG),layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':'#b38c45','line-width':Z(7,1.2,12,4,16,12)}},
-    {id:'rd-minor',type:'line',source:src,'source-layer':'road',filter:cls(ROADS_MINOR),layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':'#ffffff','line-width':Z(10,0.6,13,2,16,7.5)}},
-    {id:'rd-big',type:'line',source:src,'source-layer':'road',filter:cls(ROADS_BIG),layout:{'line-cap':'round','line-join':'round'},
-      paint:{'line-color':['match',['get','class'],['motorway','motorway_link'],'#eaa54e',['trunk','trunk_link','primary','primary_link'],'#f4c96c','#f8e2a0'],'line-width':Z(7,0.7,12,2.8,16,10)}},
-    {id:'transit',type:'line',source:src,'source-layer':'transit',paint:{'line-color':['match',['get','class'],'lift','#3f3f3f','#7c7c7c'],'line-width':Z(9,0.6,14,1.4),'line-dasharray':['match',['get','class'],'lift',['literal',[4,1]],['literal',[1,0]]]}},
-    {id:'mtb-under',type:'line',source:src,'source-layer':'road',filter:['has','mtb'],layout:{...vis(o.scale),'line-cap':'round','line-join':'round'},paint:{'line-color':MTB_COL,'line-opacity':0.85,'line-width':Z(11,2,13,4.2,16,9)}},
-    {id:'track',type:'line',source:src,'source-layer':'road',filter:['==',['get','class'],'track'],
-      paint:{'line-color':'#86562a','line-width':Z(11,0.8,13,1.7,16,3.2),'line-dasharray':['match',['get','tt'],'grade1',['literal',[1,0]],'grade2',['literal',[5,1.5]],['literal',[3,2]]]}},
-    {id:'path',type:'line',source:src,'source-layer':'road',filter:cls(PATHS),
-      paint:{'line-color':'#36342f','line-opacity':['match',['get','vis'],['bad','horrible','no'],0.45,1],'line-width':Z(11,0.7,13,1.4,16,2.6),'line-dasharray':['match',['get','class'],'steps',['literal',[0.6,0.6]],['literal',[2.2,1.6]]]}},
-    {id:'cycleway',type:'line',source:src,'source-layer':'road',filter:['==',['get','class'],'cycleway'],paint:{'line-color':'#2b6cb0','line-width':Z(11,0.6,16,2),'line-dasharray':[3,1.5]}},
-    {id:'ct-label',type:'symbol',source:src,'source-layer':'contour',filter:['==',['get','idx'],1],minzoom:12.5,layout:{...vis(o.contours&&o.labels),'symbol-placement':'line','text-field':['to-string',['get','ele']],'text-font':['Noto Sans Regular'],'text-size':9,'symbol-spacing':350},paint:{'text-color':'#97714a',...halo}},
-    {id:'rd-label',type:'symbol',source:src,'source-layer':'road',minzoom:13,filter:['has','name'],layout:{...vis(o.labels),'symbol-placement':'line','text-field':['get','name'],'text-font':['Noto Sans Regular'],'text-size':10,'symbol-spacing':300},paint:{'text-color':'#4a4740',...halo}},
-    {id:'lift-label',type:'symbol',source:src,'source-layer':'transit',minzoom:12,filter:['all',['==',['get','class'],'lift'],['has','name']],layout:{...vis(o.labels),'symbol-placement':'line','text-field':['get','name'],'text-font':['Noto Sans Italic'],'text-size':10},paint:{'text-color':'#333',...halo}},
-    {id:'poi-dot',type:'circle',source:src,'source-layer':'poi',paint:{
-      'circle-color':['match',['get','class'],'peak','#6b3a1e','hut','#c4361b','alm','#3f7d3a','water','#2b7bd6','#7a7a7a'],
-      'circle-radius':Z(10,['match',['get','class'],'hut',2.5,'alm',2,1.6],15,['match',['get','class'],'hut',4.5,'alm',4,3]),
-      'circle-stroke-color':'#fff','circle-stroke-width':['match',['get','class'],['hut','alm'],1,0.6]}},
-    {id:'poi-label',type:'symbol',source:src,'source-layer':'poi',filter:['!=',['get','class'],'water'],layout:{...vis(o.labels),
-      'text-field':['case',['has','ele'],['format',['get','name'],{},'\n',{},['to-string',['round',['get','ele']]],{'font-scale':0.82}],['get','name']],
-      'text-font':['match',['get','class'],'saddle',['literal',['Noto Sans Italic']],['literal',['Noto Sans Medium']]],
-      'text-size':['match',['get','class'],'peak',11,'hut',11,10],'text-anchor':'top','text-offset':[0,0.55],'text-max-width':8,'symbol-sort-key':['match',['get','class'],'peak',0,'hut',1,2]},
-      paint:{'text-color':['match',['get','class'],'peak','#5a3418','hut','#8c2a14','alm','#2f5f2b','#555'],...halo}},
-    {id:'place-label',type:'symbol',source:src,'source-layer':'place',layout:{...vis(o.labels),'text-field':['get','name'],
-      'text-font':['match',['get','class'],['city','town'],['literal',['Noto Sans Medium']],['literal',['Noto Sans Regular']]],
-      'text-size':['match',['get','class'],'city',16,'town',13.5,'village',12,11],'text-max-width':9,
-      'symbol-sort-key':['match',['get','class'],'city',0,'town',1,'village',2,3]},paint:{'text-color':'#2a2a2a',...halo}}
-  ];
-  return {version:8,glyphs:KFONTS+'{fontstack}/{range}.pbf',sources:{t:{type:'vector',url:'pmtiles://'+key,attribution:K_ATTR}},layers:lay};
-}
-
-/* MapLibre-Ebene in Leaflet einhängen (oder Quelle wechseln) */
-async function mtbAttach(){
-  const seq=++K.seq;
-  $('#mtbChip').hidden=false; $('#mtbChip').textContent='MTB-Karte wird vorbereitet …';
-  try{ await kLibs(); }
-  catch(e){ if(seq!==K.seq) return; $('#mtbChip').hidden=true; toast('Die Kartenbibliothek konnte nicht geladen werden. Ohne Netz geht das nur in der App.',6000); setBase('topo'); return; }
-  if(seq!==K.seq||S.base!=='mtb') return;
-  if(!K.local.size&&!K.idx) { await Promise.all([kLoadLocal(),kLoadIndex()]); if(seq!==K.seq||S.base!=='mtb') return; }
-  const q=kPickSource();
-  if(!q){ $('#mtbChip').hidden=true; toast(K.idxErr?'Keine MTB-Karte auf dem Gerät und gerade kein Netz.':'Es gibt noch keine fertige MTB-Karte. Sie wird gerade gebaut.',6000); setBase('topo'); return; }
-  if(!K.proto.tiles.has(q.getKey())) K.proto.add(new pmtiles.PMTiles(q));
-  K.srcKey=q.getKey(); K.remote=!q.blobs;
-  if(curBase&&curBase.getMaplibreMap&&curBase.getMaplibreMap()){ curBase.getMaplibreMap().setStyle(mtbStyle(K.srcKey)); }
-  else{
-    if(curBase){ map.removeLayer(curBase); }
-    curBase=L.maplibreGL({style:mtbStyle(K.srcKey),interactive:false,attributionControl:{customAttribution:K_ATTR}}).addTo(map);
-  }
-  mtbChipUpdate(q.m); applyLook();
-}
-function mtbChipUpdate(m){
-  const c=$('#mtbChip');
-  if(S.base!=='mtb'||!K.srcKey){ c.hidden=true; return; }
-  if(K.remote){ c.hidden=false; c.textContent=(K.preview?'Vorschau · ':'')+'MTB-Karte online, nicht gespeichert'; }
-  else c.hidden=true;
-  const n=$('#mtbNote');
-  if(n&&m) n.textContent=(K.remote?'Online-Ansicht':'Offline auf dem Gerät')+' · '+m.name+' · Stand '+fmtDate(m.built);
-}
-function mtbRestyle(){ if(S.base==='mtb'&&curBase&&curBase.getMaplibreMap&&curBase.getMaplibreMap()&&K.srcKey) curBase.getMaplibreMap().setStyle(mtbStyle(K.srcKey)); }
-
-/* Antippen eines Weges: S-Skala, Untergrund, Wegzustand */
-const K_CLASS={track:'Forstweg / Feldweg',path:'Pfad',footway:'Fußweg',bridleway:'Reitweg',cycleway:'Radweg',steps:'Treppe',
-  residential:'Wohnstraße',unclassified:'Nebenstraße',service:'Zufahrt',living_street:'Spielstraße',pedestrian:'Fußgängerzone',tertiary:'Straße',secondary:'Landstraße',primary:'Hauptstraße',trunk:'Schnellstraße',motorway:'Autobahn'};
-const K_SURF={asphalt:'Asphalt',paved:'befestigt',concrete:'Beton',paving_stones:'Pflaster',sett:'Pflaster',compacted:'verdichteter Schotter',fine_gravel:'feiner Schotter',
-  gravel:'Schotter',pebblestone:'Kies',unpaved:'unbefestigt',ground:'Erde / Waldboden',dirt:'Erde',earth:'Erde',grass:'Gras',rock:'Fels',stone:'Stein',roots:'Wurzeln',mud:'Matsch',sand:'Sand',wood:'Holz',scree:'Geröll'};
-const K_TT={grade1:'1 – fest, asphaltiert',grade2:'2 – meist fest, Schotter',grade3:'3 – gemischt',grade4:'4 – meist weich',grade5:'5 – weich, Wiese/Erde'};
-const K_SAC={hiking:'T1 Wandern',mountain_hiking:'T2 Bergwandern',demanding_mountain_hiking:'T3 anspruchsvolles Bergwandern',alpine_hiking:'T4 Alpinwandern',demanding_alpine_hiking:'T5 anspruchsvolles Alpinwandern',difficult_alpine_hiking:'T6 schwieriges Alpinwandern'};
-const K_VIS={excellent:'sehr gut',good:'gut',intermediate:'mittel',bad:'schlecht',horrible:'sehr schlecht',no:'kein Weg erkennbar'};
-const K_SCOL={0:'#2e9e46',1:'#1f6fd1',2:'#d93025',3:'#1b1b1b'};
-function mtbTrailInfo(ll){
-  try{
-    if(S.base!=='mtb'||!curBase||!curBase.getMaplibreMap) return '';
-    const gm=curBase.getMaplibreMap(); if(!gm||!gm.getLayer('path')) return '';
-    const p=gm.project([ll.lng,ll.lat]), r=12;
-    const fs=gm.queryRenderedFeatures([[p.x-r,p.y-r],[p.x+r,p.y+r]],{layers:['path','track','cycleway','rd-minor','mtb-under'].filter(id=>gm.getLayer(id))});
-    if(!fs.length) return '';
-    const rank=f=>(f.properties.mtb!=null?0:2)+(PATHS.includes(f.properties.class)||f.properties.class==='track'?0:1);
-    const f=fs.sort((a,b)=>rank(a)-rank(b))[0].properties;
-    const row=(k,v)=>v?`<dt>${k}</dt><dd>${v}</dd>`:'';
-    const sc=f.mtb!=null?String(f.mtb).replace(/^s/i,''):'', sn=sc.charAt(0);
-    const sHtml=sc?`<span class="s" style="background:${K_SCOL[sn]||'#8e24aa'}">S${esc(sc)}</span>`:'<span class="muted">keine Angabe</span>';
-    const osm=`https://www.openstreetmap.org/#map=18/${ll.lat.toFixed(5)}/${ll.lng.toFixed(5)}`;
-    return `<div class="pp pp-trail"><div class="pp-k">${esc(K_CLASS[f.class]||f.class||'Weg')}</div>${f.name?`<div class="pp-n">${esc(f.name)}</div>`:''}<dl>`+
-      row('S-Skala',sHtml)+row('Wanderskala',esc(K_SAC[f.sac]||f.sac||''))+row('Untergrund',esc(K_SURF[f.surface]||f.surface||''))+
-      row('Wegzustand',esc(K_TT[f.tt]||f.tt||''))+row('Sichtbarkeit',esc(K_VIS[f.vis]||f.vis||''))+row('Fahrrad',f.bicycle==='no'?'<b>verboten</b>':(f.bicycle==='yes'||f.bicycle==='designated'?'erlaubt':''))+
-      `</dl><div class="muted" style="margin-top:6px">Falsch? <a href="${osm}" target="_blank" rel="noopener">In OpenStreetMap ansehen und korrigieren</a></div></div>`;
-  }catch(e){ return ''; }
-}
-
-/* Einstellungen: Liste der Karten mit Vorschau, Download, Löschen */
-function renderKarten(){
-  const box=$('#kartenList'); if(!box) return;
-  const ids=kRegions();
-  if(!ids.length){ box.innerHTML=`<p class="note">${K.idxErr?'Die Kartenliste ist gerade nicht erreichbar (kein Netz?).':'Noch keine Karte fertig gebaut. Das dauert nach der Einrichtung ungefähr eine Stunde.'}</p>`; return; }
-  box.innerHTML=ids.map(id=>{
-    const r=kRemote(id), l=K.local.get(id), have=l&&l.blobs?l.rec.m:null, pend=l&&l.rec.pending, m=r||have||pend;
-    let st, cls='kst', btn=[];
-    if(have){ st=`Auf dem Gerät · Stand ${fmtDate(have.built)} · ${mb(have.size)} MB`; cls+=' ok';
-      if(r&&r.version!==have.version) st+=`<br>Neuer Stand vom ${fmtDate(r.built)} verfügbar (${mb(r.size)} MB)`; }
-    else if(pend) st=`Teilweise geladen (${l.rec.done||0} von ${pend.files.length} Teilen)`;
-    else st=`Nicht geladen · ${mb(m.size)} MB`;
-    if(r) btn.push(`<button class="btn" data-k="pre" data-id="${esc(id)}">Vorschau</button>`);
-    if(r&&(!have||have.version!==r.version)) btn.push(`<button class="btn primary" data-k="dl" data-id="${esc(id)}">${have?'Aktualisieren':pend?'Fortsetzen':'Herunterladen'}</button>`);
-    if(have&&S.base!=='mtb') btn.push(`<button class="btn" data-k="show" data-id="${esc(id)}">Anzeigen</button>`);
-    if(l) btn.push(`<button class="btn danger" data-k="del" data-id="${esc(id)}">Löschen</button>`);
-    return `<div class="kcard"><b>${esc(m.name)}</b>${m.beschreibung?`<span class="kst">${esc(m.beschreibung)}</span>`:''}<span class="${cls}">${st}</span><div class="kbtns">${btn.join('')}</div></div>`;
-  }).join('');
-}
-$('#kartenList').addEventListener('click',async e=>{
-  const b=e.target.closest('button[data-k]'); if(!b) return; const id=b.dataset.id;
-  if(b.dataset.k==='pre'||b.dataset.k==='show'){
-    const m=kRemote(id)||(K.local.get(id)&&K.local.get(id).rec.m); if(!m) return;
-    K.preview=b.dataset.k==='pre'?id:null; ls.set('mtbRegion',id);
-    if(S.base==='mtb') mtbAttach(); else setBase('mtb');
-    map.fitBounds([[m.bbox[1],m.bbox[0]],[m.bbox[3],m.bbox[2]]]);
-    if(window.innerWidth<900) sheet.classList.remove('open');
-  }
-  else if(b.dataset.k==='dl') kDownload(id);
-  else if(b.dataset.k==='del'){
-    if(!b.dataset.arm){ b.dataset.arm=1; b.textContent='Wirklich löschen?'; b.classList.add('armed'); setTimeout(()=>{ if(b.isConnected){ delete b.dataset.arm; b.textContent='Löschen'; b.classList.remove('armed'); } },3000); return; }
-    await kDelete(id); toast('Karte gelöscht.');
-  }
-});
-
-window.addEventListener('online',()=>{ kInit(); if(S.base==='mtb'&&!K.srcKey) mtbAttach(); });
-async function kDelete(id,keepVersion){
-  const keys=await kdb.keys('parts',IDBKeyRange.bound(id+'@',id+'@￿'));
-  for(const k of keys) if(!keepVersion||!String(k).startsWith(id+'@'+keepVersion+':')) await kdb.del('parts',k);
-  if(!keepVersion) await kdb.del('karten',id);
-  if(!K.idx) await kLoadIndex();
-  await kLoadLocal(); renderKarten(); if(S.base==='mtb') mtbAttach();
-}
-
-async function kDownload(id){
-  if(K.busy) return;
-  await kLoadIndex(); const m=kRemote(id);
-  if(!m){ toast('Die Karte ist gerade nicht erreichbar. Netz prüfen.'); return; }
-  const l=K.local.get(id), haveM=l&&l.blobs?l.rec.m:null;
-  let need=m.size; for(let i=0;i<m.files.length;i++) if(await kdb.get('parts',partKey(m,i)).catch(()=>null)) need-=partLen(m,i);
-  try{ if(navigator.storage&&navigator.storage.estimate){ const est=await navigator.storage.estimate();
-    if(est.quota&&est.quota-est.usage<need*1.05){ toast(`Zu wenig Speicher: gebraucht ${mb(need)} MB, frei ${mb(est.quota-est.usage)} MB.`,7000); return; } } }catch(e){}
-  if(navigator.storage&&navigator.storage.persist) navigator.storage.persist().catch(()=>{});
-  K.busy=true; busy.show('Karte herunterladen');
-  const rec={id,m:haveM,pending:m,done:0}; await kdb.put('karten',rec);
-  let got=m.size-need, ok=true;
-  const tick=x=>busy.set((got+x)/m.size,`${m.name}: ${mb(got+x)} von ${mb(m.size)} MB`);
-  try{
-    for(let i=0;i<m.files.length;i++){
-      if(busy.cancel){ ok=false; break; }
-      const key=partKey(m,i);
-      if(await kdb.get('parts',key)){ rec.done=i+1; continue; }
-      tick(0);
-      let blob=null;
-      for(let attempt=0;attempt<3&&!blob;attempt++){
-        try{
-          const r=await fetch(KBASE+'karte/daten/'+m.files[i],{cache:'no-store'}); if(!r.ok) throw new Error('HTTP '+r.status);
-          const rd=r.body.getReader(), chunks=[]; let n=0;
-          for(;;){ const {done,value}=await rd.read(); if(done) break; chunks.push(value); n+=value.length; tick(n); if(busy.cancel){ rd.cancel(); break; } }
-          if(busy.cancel) break;
-          const bl=new Blob(chunks); if(bl.size!==partLen(m,i)) throw new Error('Teil unvollständig'); blob=bl;
-        }catch(e){ if(attempt===2) throw e; await sleep(3000); }
-      }
-      if(!blob){ ok=false; break; }
-      await kdb.put('parts',blob,key); got+=blob.size; rec.done=i+1; await kdb.put('karten',rec);
-    }
-    if(ok){
-      const fin={id,m,pending:null,done:m.files.length}; await kdb.put('karten',fin);
-      K.preview=null; ls.set('mtbRegion',id);
-      await kDelete(id,m.version);
-      busy.hide(); toast(`${m.name} ist offline gespeichert (${mb(m.size)} MB).`,5000);
-    } else { busy.hide(); toast('Download pausiert. „Fortsetzen“ macht an derselben Stelle weiter.',5000); await kLoadLocal(); renderKarten(); }
-  }catch(e){
-    busy.hide(); await kLoadLocal(); renderKarten();
-    toast('Download unterbrochen ('+String(e.message||e).slice(0,60)+'). „Fortsetzen“ macht weiter.',7000);
-  }finally{ K.busy=false; }
-}
-
-/* Schalter für die MTB-Karte */
-[['tMtbScale','scale'],['tMtbContours','contours'],['tMtbLabels','labels']].forEach(([el,k])=>{
-  const t=$('#'+el); t.checked=!!S.mtb[k];
-  t.addEventListener('change',()=>{ S.mtb[k]=t.checked; ls.set('mtb',S.mtb); $('#mtbLegend').hidden=!S.mtb.scale; mtbRestyle(); });
-});
-$('#mtbLegend').hidden=!S.mtb.scale;
-async function kInit(){ await Promise.all([kLoadLocal(),kLoadIndex()]); renderKarten(); }
-
 /* ---------- Start ---------- */
 (async()=>{
   setBase(S.base); openTab(ls.get('tab','tours')); applyTheme();
@@ -1935,7 +1610,6 @@ async function kInit(){ await Promise.all([kLoadLocal(),kLoadIndex()]); renderKa
   if(v&&v.c) map.setView(v.c,v.z); else if(S.acts.length) fitActs();
   if(!S.acts.length){ openTab('data'); sheet.classList.add('open'); }
   setPeek(); autoPois(); restoreCheck();
-  kInit();
 })();
 </script>
 </body>
