@@ -1550,7 +1550,6 @@ async function saveBlob(blob,name){
 }
 
 if($('#verNum').textContent.startsWith('__')) $('#verNum').textContent='Web';
-if(NATIVE) $('#verNum').textContent+=' · Widget '+(TW?'verbunden':'nicht verfügbar');
 
 /* ---------- Android-Widget (Startbildschirm): Aufnahme starten/stoppen, Live-Daten ---------- */
 var TW=null;
@@ -1578,6 +1577,7 @@ if(TW){
   });
   setTimeout(()=>widgetPush(true),1500);
 }
+if(NATIVE) $('#verNum').textContent+=' · Widget '+(TW?'verbunden':'nicht verfügbar');
 
 /* ---------- Start ---------- */
 (async()=>{
