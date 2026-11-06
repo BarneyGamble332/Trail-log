@@ -1380,7 +1380,8 @@ function renderDetail(a){
     </div>
     <div><h3>Höhenprofil</h3><canvas id="prof" class="prof"></canvas><p class="note" id="profNote" hidden></p></div>
     <button class="btn" id="tFit">Auf Karte zeigen</button>
-    <button class="btn danger" id="tDel">Tour löschen</button>`;
+    <button class="btn danger" id="tDel">Tour löschen</button>
+    <button class="btn" id="tGpx">Als GPX exportieren</button>`;
   drawProfile($('#prof'),a);
 }
 function drawProfile(cv,a){
@@ -1431,6 +1432,36 @@ function openTour(id){
   TOUR.sel=id; map.closePopup(); openTab('tours'); sheet.classList.add('open');
   renderTours(); const p=$('.panes'); if(p) p.scrollTop=0; showSel(a);
 }
+/* Einzelne Tour als GPX: gespeicherter (vereinfachter) Verlauf mit Höhen, Startzeit in den Metadaten.
+   Lücken (z. B. Pausen ohne GPS) werden zu eigenen Segmenten. Zeiten je Punkt sind nicht gespeichert. */
+function tourGpx(a){
+  const x=v=>String(v).replace(/[<>&"']/g,ch=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&apos;'}[ch]));
+  const c=a.c, e=a.e, iso=new Date(a.d).toISOString(), segs=[]; let cur=[];
+  for(let i=0;i<c.length;i+=2){
+    if(i>0&&((c[i+1]-c[i-1])*Math.cos(c[i]*D2R)*111320)**2+((c[i]-c[i-2])*110540)**2>GAP_M*GAP_M){ if(cur.length) segs.push(cur); cur=[]; }
+    const el=e&&isFinite(e[i/2])?`<ele>${(Math.round(e[i/2]*10)/10)}</ele>`:'';
+    const tm=i===0?`<time>${iso}</time>`:'';
+    cur.push(`<trkpt lat="${(+c[i]).toFixed(6)}" lon="${(+c[i+1]).toFixed(6)}">${el}${tm}</trkpt>`);
+  }
+  if(cur.length) segs.push(cur);
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Trail Log" xmlns="http://www.topografix.com/GPX/1/1">
+<metadata><name>${x(a.n)}</name><time>${iso}</time></metadata>
+<trk><name>${x(a.n)}</name><type>${x(a.t)}</type>
+${segs.map(sg=>'<trkseg>\n'+sg.join('\n')+'\n</trkseg>').join('\n')}
+</trk>
+</gpx>
+`;
+}
+async function exportGpx(){
+  const a=byId.get(TOUR.sel); if(!a) return;
+  const d=new Date(a.d), day=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  const base=(a.n||'Tour').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/ß/g,'ss').replace(/[^A-Za-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,50)||'Tour';
+  const blob=new Blob([tourGpx(a)],{type:'application/gpx+xml'});
+  let where;
+  try{ where=await saveBlob(blob,`${day}-${base}.gpx`,{downloads:true}); }catch(e){ toast('GPX konnte nicht gespeichert werden.',5000); return; }
+  toast(where==='downloads'?'GPX gespeichert · Downloads › Trail Log':'GPX gespeichert.',5000);
+}
 let delT;
 async function armDelete(b){
   if(!b.classList.contains('armed')){ b.classList.add('armed'); b.textContent='Wirklich löschen? Nochmal tippen'; clearTimeout(delT);
@@ -1443,6 +1474,7 @@ $('#tours').addEventListener('click',e=>{
   const li=e.target.closest('li[data-act]'); if(li){ openTour(li.dataset.act); return; }
   const b=e.target.closest('button'); if(!b) return;
   if(b.id==='tBack'){ TOUR.sel=null; selLayer.clearLayers(); renderTours(); }
+  if(b.id==='tGpx'){ exportGpx(); return; }
   else if(b.id==='tMore'){ TOUR.n+=40; renderTours(); }
   else if(b.id==='tFit'){ const a=byId.get(TOUR.sel); if(a) fitSel(a); }
   else if(b.id==='tDel') armDelete(b);
