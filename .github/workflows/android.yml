@@ -507,12 +507,13 @@ jobs:
                                   android:textSize="9sp" />
                           </LinearLayout>
                       </LinearLayout>
-                      <View
+                      <LinearLayout
                           android:layout_width="match_parent"
                           android:layout_height="1dp"
                           android:layout_marginTop="7dp"
                           android:layout_marginBottom="5dp"
-                          android:background="#2C363E" />
+                          android:background="#2C363E"
+                          android:orientation="horizontal" />
                       <LinearLayout
                           android:layout_width="match_parent"
                           android:layout_height="wrap_content"
