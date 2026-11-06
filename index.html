@@ -581,7 +581,7 @@ function haversine(a1,o1,a2,o2){
 function buildAct(id,trk,meta){
   const n=trk.lat.length; if(n<2) return null;
   let dist=0, gain=0, ref=null, mv=0, s=90,w=180,nn=-90,e=-180;
-  const keep=[trk.lat[0],trk.lon[0]], keepE=[isFinite(trk.ele[0])?trk.ele[0]:NaN]; let kl=trk.lat[0], ko=trk.lon[0];
+  const keep=[trk.lat[0],trk.lon[0]], keepE=[isFinite(trk.ele[0])?trk.ele[0]:NaN], keepT=[trk.t?trk.t[0]:NaN]; let kl=trk.lat[0], ko=trk.lon[0];
   let t0=NaN,t1=NaN;
   for(let i=0;i<n;i++){
     const a=trk.lat[i], o=trk.lon[i];
@@ -591,14 +591,19 @@ function buildAct(id,trk,meta){
     const el=trk.ele[i];
     if(isFinite(el)){ if(ref===null) ref=el; else if(el-ref>4){ gain+=el-ref; ref=el; } else if(ref-el>4) ref=el; }
     const tt=trk.t[i]; if(isFinite(tt)){ if(isNaN(t0)) t0=tt; t1=tt; }
-    if(i>0){ const dx=(o-ko)*Math.cos(a*D2R)*111320, dy=(a-kl)*110540; if(dx*dx+dy*dy>=64 || i===n-1){ keep.push(a,o); keepE.push(isFinite(el)?el:NaN); kl=a; ko=o; } }
+    if(i>0){ const dx=(o-ko)*Math.cos(a*D2R)*111320, dy=(a-kl)*110540; if(dx*dx+dy*dy>=64 || i===n-1){ keep.push(a,o); keepE.push(isFinite(el)?el:NaN); keepT.push(trk.t?trk.t[i]:NaN); kl=a; ko=o; } }
   }
   const m=meta||{};
   const date=isFinite(t0)?t0:(isFinite(m.date)?m.date:Date.now());
   const dur=isFinite(t1-t0)?(t1-t0)/1000:0;
   return {id:String(id), n:(m.name||trk.name||'Tour').trim(), t:typeKey(m.type||trk.type), d:date,
     dist, gain:isFinite(m.gain)?m.gain:gain, dur, mv:mv>0?mv:dur, v:2,
-    bb:[s,w,nn,e], c:new Float32Array(keep), e:new Float32Array(keepE)};
+    bb:[s,w,nn,e], c:new Float32Array(keep), e:new Float32Array(keepE), ts:actTimes(keepT,date)};
+}
+/* Zeit je Punkt als Sekunden ab Start (Float64 wegen Bruchteilen), nur wenn alle Punkte eine Zeit haben */
+function actTimes(T,d){
+  if(!T.length||!T.every(v=>isFinite(v))) return undefined;
+  return Float64Array.from(T,v=>Math.round((v-d)/100)/10);
 }
 
 function parseTrackBytes(name,u8){
@@ -1433,14 +1438,14 @@ function openTour(id){
   renderTours(); const p=$('.panes'); if(p) p.scrollTop=0; showSel(a);
 }
 /* Einzelne Tour als GPX: gespeicherter (vereinfachter) Verlauf mit Höhen, Startzeit in den Metadaten.
-   Lücken (z. B. Pausen ohne GPS) werden zu eigenen Segmenten. Zeiten je Punkt sind nicht gespeichert. */
+   Lücken (z. B. Pausen ohne GPS) werden zu eigenen Segmenten. Zeit je Punkt, wenn die Tour sie hat (neuere Aufnahmen/Importe). */
 function tourGpx(a){
   const x=v=>String(v).replace(/[<>&"']/g,ch=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&apos;'}[ch]));
   const c=a.c, e=a.e, iso=new Date(a.d).toISOString(), segs=[]; let cur=[];
   for(let i=0;i<c.length;i+=2){
     if(i>0&&((c[i+1]-c[i-1])*Math.cos(c[i]*D2R)*111320)**2+((c[i]-c[i-2])*110540)**2>GAP_M*GAP_M){ if(cur.length) segs.push(cur); cur=[]; }
     const el=e&&isFinite(e[i/2])?`<ele>${(Math.round(e[i/2]*10)/10)}</ele>`:'';
-    const tm=i===0?`<time>${iso}</time>`:'';
+    const tm=a.ts&&a.ts.length*2===c.length?`<time>${new Date(a.d+a.ts[i/2]*1000).toISOString()}</time>`:i===0?`<time>${iso}</time>`:'';
     cur.push(`<trkpt lat="${(+c[i]).toFixed(6)}" lon="${(+c[i+1]).toFixed(6)}">${el}${tm}</trkpt>`);
   }
   if(cur.length) segs.push(cur);
@@ -1612,11 +1617,12 @@ document.addEventListener('visibilitychange',async()=>{ if(REC.on&&document.visi
 
 /* ---------- Backup ---------- */
 function actToJSON(a){ return {id:a.id,n:a.n,t:a.t,d:a.d,dist:a.dist,gain:a.gain,dur:a.dur,mv:a.mv,v:a.v||1,bb:a.bb,
-  c:Array.from(a.c,v=>+v.toFixed(6)), e:a.e?Array.from(a.e,v=>isFinite(v)?Math.round(v*10)/10:null):null}; }
+  c:Array.from(a.c,v=>+v.toFixed(6)), e:a.e?Array.from(a.e,v=>isFinite(v)?Math.round(v*10)/10:null):null, ts:a.ts?Array.from(a.ts):undefined}; }
 function actFromJSON(o){
   if(!o||!Array.isArray(o.c)||o.c.length<4||!o.id) return null;
   return {id:String(o.id),n:o.n||'Tour',t:o.t||'other',d:+o.d,dist:+o.dist||0,gain:+o.gain||0,dur:+o.dur||0,mv:+o.mv||+o.dur||0,v:o.e?2:(o.v||1),
-    bb:o.bb,c:Float32Array.from(o.c),e:o.e?Float32Array.from(o.e,v=>v==null?NaN:v):undefined};
+    bb:o.bb,c:Float32Array.from(o.c),e:o.e?Float32Array.from(o.e,v=>v==null?NaN:v):undefined,
+    ts:Array.isArray(o.ts)&&o.ts.length*2===o.c.length?Float64Array.from(o.ts):undefined};
 }
 /* Altes Trail-Log-Backup: p=[[lat,lon,ele|null,Strecke]], t=Start in ms, d=Meter, up=Hoehenmeter, mv/el=Sekunden */
 function actFromLegacy(o){
