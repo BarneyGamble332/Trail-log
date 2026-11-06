@@ -7,6 +7,7 @@ on:
       - index.html
       - .github/workflows/android.yml
       - karte/fonts/**
+      - icon/**
 
 permissions:
   contents: write
@@ -57,21 +58,21 @@ jobs:
           npx cap add android
           npx cap sync android
           RES=android/app/src/main/res
-          # 2) App-Symbol: gelber Hintergrund, dunkler Berg, roter Punkt
-          sed -i 's/#FFFFFF/#F2C000/' $RES/values/ic_launcher_background.xml
+          # 2) App-Symbol aus icon/app-symbol.png (eigene Heatmap, nur Spuren auf dunklem Grund)
+          sed -i 's/#FFFFFF/#15181C/' $RES/values/ic_launcher_background.xml
           pip install --quiet pillow
           python3 - <<'PY'
           from PIL import Image, ImageDraw
-          S=432
-          fg=Image.new('RGBA',(S,S),(0,0,0,0)); d=ImageDraw.Draw(fg)
-          d.polygon([(110,300),(185,165),(232,238),(272,185),(322,300)],fill='#1b1f24')
-          d.ellipse([200,316,232,348],fill='#d93025')
-          bg=Image.new('RGBA',(S,S),'#F2C000'); bg.alpha_composite(fg)
+          src=Image.open('icon/app-symbol.png').convert('RGBA')   # 108 dp, sichtbar ist die Mitte (72 dp)
           res='android/app/src/main/res/'
           for n,s,f in [('mdpi',48,108),('hdpi',72,162),('xhdpi',96,216),('xxhdpi',144,324),('xxxhdpi',192,432)]:
-              fg.resize((f,f),Image.LANCZOS).save(res+'mipmap-%s/ic_launcher_foreground.png'%n)
-              ic=bg.resize((s,s),Image.LANCZOS)
-              ic.save(res+'mipmap-%s/ic_launcher.png'%n); ic.save(res+'mipmap-%s/ic_launcher_round.png'%n)
+              src.resize((f,f),Image.LANCZOS).save(res+'mipmap-%s/ic_launcher_foreground.png'%n)
+              k=src.size[0]; c=round(k*18/108)
+              ic=src.crop((c,c,k-c,k-c)).resize((s,s),Image.LANCZOS)
+              ic.save(res+'mipmap-%s/ic_launcher.png'%n)
+              m=Image.new('L',(s*4,s*4),0); ImageDraw.Draw(m).ellipse([0,0,s*4-1,s*4-1],fill=255)
+              r=Image.new('RGBA',(s,s),(0,0,0,0)); r.paste(ic,(0,0),m.resize((s,s),Image.LANCZOS))
+              r.save(res+'mipmap-%s/ic_launcher_round.png'%n)
           PY
           # 3) Versionsnummer hochzaehlen, damit Updates ueber die alte Installation moeglich sind
           sed -i "s/versionCode 1/versionCode ${RUN_NUMBER:-1}/; s/versionName \"1.0\"/versionName \"1.${RUN_NUMBER:-1}\"/" android/app/build.gradle
