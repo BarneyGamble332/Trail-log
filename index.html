@@ -234,6 +234,9 @@ canvas.prof{width:100%;height:120px;display:block}
 .rec-hud{pointer-events:auto;display:flex;align-items:center;gap:10px;background:var(--ink);color:var(--panel);border-radius:999px;padding:6px 6px 6px 14px;font:500 14px/1 var(--f-num);box-shadow:0 2px 8px rgba(0,0,0,.3)}
 .rec-hud .rdot{width:10px;height:10px;border-radius:50%;background:#ff3b30;animation:pulse 1.2s infinite}
 .rec-hud button{border:0;border-radius:999px;background:var(--sign);color:var(--sign-ink);font:700 14px/1 var(--f-display);letter-spacing:.06em;text-transform:uppercase;padding:9px 14px;cursor:pointer}
+.nav-hud{pointer-events:none;align-self:flex-start;margin-top:6px;background:#c2185b;color:#fff;border-radius:999px;padding:7px 14px;font:600 14px/1 var(--f-num);box-shadow:0 2px 8px rgba(0,0,0,.3)}
+.nav-hud.off{background:#d93025;animation:pulse 1.2s infinite}
+.nav-arrow i{display:block;width:0;height:0;margin:2px auto 0;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:11px solid #c2185b;filter:drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 1px #fff)}
 .rec-hud button.ic{padding:8px 10px;font-size:16px}
 @keyframes pulse{50%{opacity:.3}}
 @media (prefers-reduced-motion:reduce){.rec-hud .rdot{animation:none}.chart i{animation:none}}
@@ -247,6 +250,7 @@ canvas.prof{width:100%;height:120px;display:block}
   <div class="loading" id="loadChip" hidden>Lade Gipfel &amp; Almen …</div>
   <div class="loading" id="mtbChip" hidden></div>
   <div class="rec-hud" id="recHud" hidden><span class="rdot"></span><b id="rhD">0,0 km</b><b id="rhH">0 Hm</b><span id="rhT">0:00</span><button class="ic" id="rhFollow" hidden aria-label="Karte folgt wieder der Position">⌖</button><button id="rhStop">Stopp</button></div>
+  <div class="nav-hud" id="navHud" hidden></div>
 </div>
 
 <aside id="sheet">
@@ -272,6 +276,18 @@ canvas.prof{width:100%;height:120px;display:block}
         <div class="rec-big"><span class="rdot"></span><b id="rpD">0,0 km</b><b id="rpH">0 Hm</b><span id="rpT">0:00</span></div>
         <button class="btn primary" id="rpStop">Aufnahme beenden und speichern</button>
         <button class="btn" id="rpDrop">Verwerfen</button>
+      </div>
+      <div class="stack recp" id="navBox">
+        <h3 style="margin:0">Route</h3>
+        <div id="navNone">
+          <button class="btn" id="navBtn">Route laden (.gpx)</button>
+          <p class="note" style="margin-top:6px">Die Route wird auf der Karte als pinke Linie mit Richtungspfeilen gezeigt. Während der Aufnahme siehst du oben die restlichen Kilometer und eine Warnung, wenn du abseits der Route bist.</p>
+        </div>
+        <div class="kcard" id="navInfo" hidden>
+          <b class="nav-n"></b><span class="kst nav-s"></span>
+          <div class="kbtns"><button class="btn" id="navShow">Auf Karte zeigen</button><button class="btn danger" id="navDel">Entfernen</button></div>
+        </div>
+        <input type="file" id="navFile" accept=".gpx,application/gpx+xml,application/xml,text/xml" hidden>
       </div>
     </section>
     <section class="pane" id="pane-tours" role="tabpanel" aria-labelledby="tab-tours">
@@ -1568,7 +1584,7 @@ function recPos(p){
   const ll=[n[0],n[1]]; REC.line.addLatLng(ll);
   if(!REC.dot) REC.dot=L.circleMarker(ll,{pane:'route',interactive:false,radius:8,color:'#fff',weight:3,fillColor:'#1b7fe8',fillOpacity:1}).addTo(recLayer); else REC.dot.setLatLng(ll);
   if(REC.follow){ if(REC.pts.length===1) map.setView(ll,Math.max(map.getZoom(),16)); else if(!map.getBounds().pad(-0.3).contains(ll)) map.panTo(ll); }
-  recTick(); if(REC.pts.length%(NATIVE?5:15)===0) ls.set('rec',{type:REC.type,t0:REC.t0,pts:REC.pts});
+  recTick(); if(NAV.r) navUpdate(n[0],n[1]); if(REC.pts.length%(NATIVE?5:15)===0) ls.set('rec',{type:REC.type,t0:REC.t0,pts:REC.pts});
 }
 function recErr(e){
   if(e.code===1){ toast('Standortzugriff verweigert. Bitte im Browser erlauben.',6000); recStop(true); return; }
@@ -1591,7 +1607,7 @@ async function recBgPrep(){
 async function recStop(discard){
   try{ navigator.geolocation.clearWatch(REC.watch); }catch(e){} if(NATIVE&&REC.bgId!=null){ try{ await BG.removeWatcher({id:REC.bgId}); }catch(e){} REC.bgId=null; } clearInterval(REC.tick); try{ REC.wl&&REC.wl.release(); }catch(e){}
   const pts=REC.pts, type=REC.type, t0=REC.t0; REC.on=false; REC.pts=[]; REC.dist=0; REC.gain=0; REC.wl=null; widgetPush(true);
-  document.body.classList.remove('recording'); recUI(); $('#recHud').hidden=true; recLayer.clearLayers(); ls.set('rec',null);
+  document.body.classList.remove('recording'); recUI(); $('#recHud').hidden=true; $('#navHud').hidden=true; NAV.idx=0; recLayer.clearLayers(); ls.set('rec',null);
   if(!discard) await saveRecording(pts,type,t0);
 }
 async function saveRecording(pts,type,t0){
@@ -2019,6 +2035,88 @@ async function kDownload(id){
 });
 $('#mtbLegend').hidden=!S.mtb.scale;
 async function kInit(){ await Promise.all([kLoadLocal(),kLoadIndex()]); renderKarten(); }
+
+/* ---------- Route laden (Navigation nach GPX) ----------
+   Eine GPX-Datei (Track oder Route) wird als Navigationslinie auf der Karte gezeigt und bleibt
+   gespeichert, bis man sie entfernt. Während der Aufnahme: Rest-Kilometer und Warnung abseits der Route. */
+map.createPane('navroute'); map.getPane('navroute').style.zIndex=445;
+const navLayer=L.layerGroup().addTo(map);
+const NAV={r:null,cum:null,idx:0,off:false};
+function navParse(txt){
+  let g=parseGPX(txt);
+  if(g.lat.length<2){ // <rtept> mit Inhalt (z. B. aus Routenplanern)
+    const lat=[],lon=[],ele=[]; const re=/<(?:\w+:)?rtept\b([^>]*?)>([\s\S]*?)<\/(?:\w+:)?rtept>/g; let m;
+    while((m=re.exec(txt))){ const la=/\blat\s*=\s*["']([^"']+)["']/.exec(m[1]), lo=/\blon\s*=\s*["']([^"']+)["']/.exec(m[1]); if(!la||!lo) continue;
+      const a=parseFloat(la[1]), o=parseFloat(lo[1]); if(!isFinite(a)||!isFinite(o)) continue; lat.push(a); lon.push(o);
+      const e=/<(?:\w+:)?ele>([^<]+)</.exec(m[2]); ele.push(e?parseFloat(e[1]):NaN); }
+    const nm=/<(?:\w+:)?rte\b[\s\S]*?<(?:\w+:)?name>([\s\S]*?)<\/(?:\w+:)?name>/.exec(txt);
+    g={lat,lon,ele,name:nm?xmlText(nm[1]):g.name};
+  }
+  if(g.lat.length<2) return null;
+  // auf ~5 m ausdünnen, damit die Route klein gespeichert werden kann
+  const c=[+g.lat[0].toFixed(6),+g.lon[0].toFixed(6)], e=[isFinite(g.ele[0])?Math.round(g.ele[0]):null]; let kl=g.lat[0], ko=g.lon[0];
+  for(let i=1;i<g.lat.length;i++){ const a=g.lat[i], o=g.lon[i], dx=(o-ko)*Math.cos(a*D2R)*111320, dy=(a-kl)*110540;
+    if(dx*dx+dy*dy>=25||i===g.lat.length-1){ c.push(+a.toFixed(6),+o.toFixed(6)); e.push(isFinite(g.ele[i])?Math.round(g.ele[i]):null); kl=a; ko=o; } }
+  return {n:(g.name||'').trim(),c,e};
+}
+function navStats(r){
+  const n=r.c.length/2, cum=new Float64Array(n); let up=0,dn=0,ref=null;
+  for(let i=1;i<n;i++) cum[i]=cum[i-1]+haversine(r.c[2*i-2],r.c[2*i-1],r.c[2*i],r.c[2*i+1]);
+  for(const el of r.e){ if(el==null) continue; if(ref===null) ref=el; else if(el-ref>4){ up+=el-ref; ref=el; } else if(ref-el>4){ dn+=ref-el; ref=el; } }
+  return {cum,dist:cum[n-1],up,dn};
+}
+function navDraw(fit){
+  navLayer.clearLayers(); const r=NAV.r; if(!r){ navUI(); return; }
+  const ll=[]; for(let i=0;i<r.c.length;i+=2) ll.push([r.c[i],r.c[i+1]]);
+  const o={pane:'navroute',interactive:false,lineJoin:'round',lineCap:'round'};
+  L.polyline(ll,{...o,color:'#fff',weight:9,opacity:.95}).addTo(navLayer);
+  L.polyline(ll,{...o,color:'#c2185b',weight:5,opacity:.9}).addTo(navLayer);
+  // Richtungspfeile alle 1 km
+  const st=navStats(r); NAV.cum=st.cum; let next=1000;
+  for(let i=1;i<ll.length;i++){ if(st.cum[i]<next) continue; next+=1000;
+    const p=ll[i-1], q=ll[i], ang=Math.atan2((q[1]-p[1])*Math.cos(q[0]*D2R),q[0]-p[0])*180/Math.PI;
+    L.marker(q,{pane:'navroute',interactive:false,icon:L.divIcon({className:'nav-arrow',iconSize:[16,16],html:`<i style="transform:rotate(${ang}deg)"></i>`})}).addTo(navLayer); }
+  const dot=(p,col)=>L.circleMarker(p,{pane:'navroute',interactive:false,radius:7,color:'#fff',weight:3,fillColor:col,fillOpacity:1}).addTo(navLayer);
+  dot(ll[ll.length-1],'#1c2227'); dot(ll[0],'#2f7a4b');
+  navUI(st);
+  if(fit){ const b=L.latLngBounds(ll); map.fitBounds(b,{paddingTopLeft:[24,70],paddingBottomRight:[24,window.innerWidth<900&&sheet.classList.contains('open')?Math.min(window.innerHeight*0.58,$('.panes').scrollHeight)+20:24],maxZoom:16}); }
+}
+function navUI(st){
+  const box=$('#navInfo'), r=NAV.r;
+  $('#navNone').hidden=!!r; box.hidden=!r; if(!r){ $('#navHud').hidden=true; return; }
+  st=st||navStats(r);
+  box.querySelector('.nav-n').textContent=r.n||'Route';
+  box.querySelector('.nav-s').textContent=`${fmt1.format(st.dist/1000)} km · ${fmt0.format(st.up)} Hm ↑ · ${fmt0.format(st.dn)} Hm ↓`;
+}
+async function navLoadFile(f){
+  try{
+    const txt=await f.text(); const r=navParse(txt);
+    if(!r){ toast('In dieser Datei wurde keine Strecke gefunden.',5000); return; }
+    if(!r.n) r.n=f.name.replace(/\.gpx$/i,'');
+    NAV.r=r; NAV.idx=0; NAV.off=false;
+    try{ ls.set('navRoute',r); }catch(e){ toast('Route ist sehr lang und wird nur bis zum Schließen der App gemerkt.',5000); }
+    if(window.innerWidth<900) sheet.classList.remove('open'); navDraw(true);
+    toast('Route geladen.');
+  }catch(e){ toast('Die Datei konnte nicht gelesen werden.',5000); }
+}
+/* Während der Aufnahme: nächster Routenpunkt (nur vorwärts in der Nähe suchen, bei Bedarf ganz) */
+function navUpdate(lat,lon){
+  const r=NAV.r, h=$('#navHud'); if(!r||!REC.on){ h.hidden=true; return; }
+  const n=r.c.length/2, near=i=>haversine(lat,lon,r.c[2*i],r.c[2*i+1]);
+  let best=NAV.idx, bd=near(best);
+  for(let i=Math.max(0,NAV.idx-50);i<Math.min(n,NAV.idx+400);i++){ const d=near(i); if(d<bd){ bd=d; best=i; } }
+  if(bd>150) for(let i=0;i<n;i++){ const d=near(i); if(d<bd){ bd=d; best=i; } }
+  NAV.idx=best;
+  const rest=Math.max(0,NAV.cum[n-1]-NAV.cum[best]), off=bd>60;
+  if(off&&!NAV.off&&navigator.vibrate) try{ navigator.vibrate([200,100,200]); }catch(e){}
+  NAV.off=off; h.hidden=false; h.classList.toggle('off',off);
+  h.textContent=off?`Abseits der Route · ${fmt0.format(bd)} m`:`Route: noch ${fmt1.format(rest/1000)} km`;
+}
+$('#navBtn').onclick=()=>$('#navFile').click();
+$('#navFile').addEventListener('change',e=>{ const f=e.target.files[0]; e.target.value=''; if(f) navLoadFile(f); });
+$('#navShow').onclick=()=>navDraw(true);
+$('#navDel').onclick=()=>{ NAV.r=null; NAV.cum=null; ls.set('navRoute',null); navDraw(false); toast('Route entfernt.'); };
+(()=>{ const r=ls.get('navRoute',null); if(r&&Array.isArray(r.c)&&r.c.length>=4){ NAV.r=r; navDraw(false); } else navUI(); })();
 
 /* ---------- Start ---------- */
 (async()=>{
