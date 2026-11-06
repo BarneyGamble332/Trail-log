@@ -407,6 +407,7 @@ jobs:
                   android:layout_width="0dp"
                   android:layout_height="match_parent"
                   android:layout_weight="1"
+                  android:background="@drawable/widget_wm"
                   android:gravity="center_vertical"
                   android:orientation="vertical">
 
@@ -863,24 +864,29 @@ jobs:
                   android:layout_width="84dp"
                   android:layout_height="0dp"
                   android:layout_weight="1"
-                  android:background="@drawable/widget_btn_start"
+                  android:background="@drawable/widget_btn_logo"
                   android:gravity="center"
                   android:orientation="vertical">
                   <TextView
-                      android:layout_width="wrap_content"
-                      android:layout_height="wrap_content"
+                      android:layout_width="40dp"
+                      android:layout_height="40dp"
+                      android:background="@drawable/widget_play"
+                      android:gravity="center"
                       android:includeFontPadding="false"
+                      android:paddingStart="3dp"
                       android:text="▶︎"
                       android:textColor="#1B1F24"
-                      android:textSize="26sp" />
+                      android:textSize="17sp" />
                   <TextView
                       android:layout_width="wrap_content"
                       android:layout_height="wrap_content"
-                      android:layout_marginTop="4dp"
+                      android:layout_marginTop="6dp"
                       android:includeFontPadding="false"
                       android:text="START"
                       android:letterSpacing="0.12"
-                      android:textColor="#1B1F24"
+                      android:shadowColor="#E6000000"
+                      android:shadowRadius="4"
+                      android:textColor="#F2C000"
                       android:textSize="12sp"
                       android:textStyle="bold" />
               </LinearLayout>
@@ -912,14 +918,6 @@ jobs:
                       android:textSize="12sp"
                       android:textStyle="bold" />
               </LinearLayout>
-              <ImageView
-                  android:layout_width="84dp"
-                  android:layout_height="20dp"
-                  android:layout_marginTop="6dp"
-                  android:alpha="0.8"
-                  android:contentDescription="Trail Log"
-                  android:scaleType="fitCenter"
-                  android:src="@drawable/widget_brand" />
               </LinearLayout>
           </LinearLayout>
           XML
@@ -931,7 +929,19 @@ jobs:
               <corners android:radius="8dp" />
           </shape>
           XML
-          mkdir -p $RES/drawable-nodpi && cp icon/widget-brand.png $RES/drawable-nodpi/widget_brand.png
+          mkdir -p $RES/drawable-nodpi $RES/drawable-xxhdpi
+          cp icon/widget-btn.png $RES/drawable-nodpi/widget_btn_logo.png
+          cp icon/widget-wm.png $RES/drawable-xxhdpi/widget_wm_img.png
+          cat > $RES/drawable/widget_wm.xml <<'XML'
+          <?xml version="1.0" encoding="utf-8"?>
+          <bitmap xmlns:android="http://schemas.android.com/apk/res/android" android:src="@drawable/widget_wm_img" android:gravity="center" />
+          XML
+          cat > $RES/drawable/widget_play.xml <<'XML'
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
+              <solid android:color="#F2C000" />
+          </shape>
+          XML
 
           cat > $RES/drawable/widget_bg.xml <<'XML'
           <?xml version="1.0" encoding="utf-8"?>
