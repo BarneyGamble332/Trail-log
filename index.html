@@ -462,7 +462,11 @@ const TYPES = {ride:'Radfahrt',mountainbikeride:'Mountainbike',ebikeride:'E-Bike
   workout:'Training',drive:'Auto',other:'Sonstiges'};
 const ALIAS = {cycling:'ride',biking:'ride',bike:'ride',hiking:'hike',running:'run',walking:'walk',mountainbiking:'mountainbikeride',
   mtb:'mountainbikeride',alpineskiing:'alpineski',backcountryskiing:'backcountryski',crosscountryskiing:'nordicski',snowshoeing:'snowshoe',
-  '1':'ride','4':'hike','9':'run','10':'walk'};
+  '1':'ride','4':'hike','9':'run','10':'walk',
+  // deutsche Bezeichnungen aus dem Strava-Export
+  radfahrt:'ride',fahrradfahrt:'ride',mountainbikefahrt:'mountainbikeride',mountainbike:'mountainbikeride',ebikefahrt:'ebikeride',
+  emountainbikefahrt:'emountainbikeride',emtb:'emountainbikeride',gravelfahrt:'gravelride',gravel:'gravelride',virtuelleradfahrt:'virtualride',
+  wanderung:'hike',wandern:'hike',lauf:'run',laufen:'run',spaziergang:'walk',trailrunning:'trailrun'};
 function typeKey(s){ const k=(s==null?'':String(s)).toLowerCase().replace(/[^a-z0-9äöüß]/g,''); return ALIAS[k]||k||'other'; }
 function typeLabel(k){ return TYPES[k] || (k.charAt(0).toUpperCase()+k.slice(1)); }
 
@@ -1740,7 +1744,7 @@ function widgetPush(force,raw){
     const days={}, from=n.getTime()-14*864e5, key=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     // Widget zählt nur Radfahrten (MTB, Rennrad/Rad, E-Bike, E-MTB, Gravel), keine virtuellen
     const BIKE=new Set(['ride','mountainbikeride','ebikeride','emountainbikeride','gravelride']);
-    for(const x of S.acts){ if(x.d<from||!BIKE.has(x.t)) continue; const k=key(new Date(x.d)), v=days[k]||(days[k]=[0,0,0]); v[0]++; v[1]=Math.round((v[1]+x.dist/1000)*100)/100; v[2]+=Math.round(x.gain||0); }
+    for(const x of S.acts){ if(x.d<from||!BIKE.has(typeKey(x.t))) continue; const k=key(new Date(x.d)), v=days[k]||(days[k]=[0,0,0]); v[0]++; v[1]=Math.round((v[1]+x.dist/1000)*100)/100; v[2]+=Math.round(x.gain||0); }
     const pr=Promise.resolve(TW.update({running:!!REC.on,start:REC.t0||0,dist:fmt1.format((REC.dist||0)/1000),gain:fmt0.format(REC.gain||0),m:mon,mt,mk,mh,days:JSON.stringify(days)}));
     if(raw) return pr;
     pr.catch(e=>{ if(!widgetPush.err){ widgetPush.err=1; toast('Widget: '+String(e&&e.message||e).slice(0,100),6000); } });
@@ -2145,6 +2149,8 @@ $('#navDel').onclick=()=>{ NAV.r=null; NAV.cum=null; ls.set('navRoute',null); na
   try{
     await idb.open();
     const [acts,pois,meta]=await Promise.all([idb.all('acts'),idb.all('pois'),idb.all('meta')]);
+    // ältere Touren mit deutschen Typnamen aus dem Strava-Export (z. B. „Radfahrt“) auf die festen Schlüssel umstellen
+    const fix=acts.filter(a=>typeKey(a.t)!==a.t); fix.forEach(a=>{ a.t=typeKey(a.t); }); if(fix.length) idb.put('acts',fix).catch(()=>{});
     S.acts=acts; pois.forEach(p=>S.pois.set(p.id,p));
     const c=meta.find(m=>m.k==='cells'); if(c) c.v.forEach(k=>S.cells.add(k));
   }catch(e){ toast('Lokaler Speicher ist nicht verfügbar. Importierte Touren gehen beim Schließen verloren.',6000); }
