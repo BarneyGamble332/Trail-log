@@ -173,7 +173,8 @@ jobs:
                   TrailWidgetProvider.save(getContext(), running, start,
                       call.getString("dist", "0,0"), call.getString("gain", "0"),
                       call.getString("m", ""), call.getString("mt", "–"),
-                      call.getString("mk", "–"), call.getString("mh", "–"));
+                      call.getString("mk", "–"), call.getString("mh", "–"),
+                      call.getString("days", "{}"));
                   call.resolve();
               }
 
@@ -275,12 +276,16 @@ jobs:
           import android.os.SystemClock;
           import android.view.View;
           import android.widget.RemoteViews;
+          import java.util.Calendar;
+          import java.util.Locale;
+          import org.json.JSONArray;
+          import org.json.JSONObject;
 
           public class TrailWidgetProvider extends AppWidgetProvider {
               static final String PREF = "tlwidget";
 
               static void save(Context c, boolean running, long start, String dist, String gain,
-                               String month, String tours, String km, String hm) {
+                               String month, String tours, String km, String hm, String days) {
                   c.getSharedPreferences(PREF, Context.MODE_PRIVATE).edit()
                       .putBoolean("run", running)
                       .putLong("start", start)
@@ -290,6 +295,7 @@ jobs:
                       .putString("mt", tours)
                       .putString("mk", km)
                       .putString("mh", hm)
+                      .putString("days", days)
                       .putLong("ts", System.currentTimeMillis())
                       .apply();
                   refresh(c);
@@ -314,6 +320,43 @@ jobs:
                   return PendingIntent.getActivity(c, code, i, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
               }
 
+              static final int[] DC = {R.id.w_dc0, R.id.w_dc1, R.id.w_dc2, R.id.w_dc3, R.id.w_dc4, R.id.w_dc5, R.id.w_dc6};
+              static final int[] DL = {R.id.w_dl0, R.id.w_dl1, R.id.w_dl2, R.id.w_dl3, R.id.w_dl4, R.id.w_dl5, R.id.w_dl6};
+              static final int[] DI = {R.id.w_di0, R.id.w_di1, R.id.w_di2, R.id.w_di3, R.id.w_di4, R.id.w_di5, R.id.w_di6};
+              static final int[] DK = {R.id.w_dk0, R.id.w_dk1, R.id.w_dk2, R.id.w_dk3, R.id.w_dk4, R.id.w_dk5, R.id.w_dk6};
+
+              static String km1(double v) {
+                  String t = String.format(Locale.GERMANY, v >= 100 ? "%.0f" : "%.1f", v);
+                  return t.endsWith(",0") ? t.substring(0, t.length() - 2) : t;
+              }
+
+              /* Aktuelle Woche (Mo-So) aus Tageswerten {"2026-11-06":[Touren,km,Hm]}.
+                 Wird bei jedem Neuzeichnen mit dem heutigen Datum berechnet, stimmt also auch ohne App-Start. */
+              static void week(RemoteViews v, SharedPreferences p) {
+                  JSONObject days;
+                  try { days = new JSONObject(p.getString("days", "{}")); } catch (Exception e) { days = new JSONObject(); }
+                  Calendar cal = Calendar.getInstance();
+                  int today = (cal.get(Calendar.DAY_OF_WEEK) + 5) % 7;
+                  cal.add(Calendar.DAY_OF_MONTH, -today);
+                  int tours = 0; double km = 0, hm = 0;
+                  for (int i = 0; i < 7; i++) {
+                      String key = String.format(Locale.US, "%04d-%02d-%02d", cal.get(Calendar.YEAR), cal.get(Calendar.MONTH) + 1, cal.get(Calendar.DAY_OF_MONTH));
+                      JSONArray d = days.optJSONArray(key);
+                      int n = d == null ? 0 : d.optInt(0, 0);
+                      double k = d == null ? 0 : d.optDouble(1, 0);
+                      tours += n; km += k; hm += d == null ? 0 : d.optDouble(2, 0);
+                      String icon = n > 0 ? "\uD83D\uDD25" : (i < today ? "\uD83D\uDCA9" : "");
+                      v.setTextViewText(DI[i], icon);
+                      v.setTextViewText(DK[i], n > 0 ? km1(k) : "");
+                      v.setTextColor(DL[i], i == today ? 0xFFF2C000 : 0xFF8E99A1);
+                      v.setInt(DC[i], "setBackgroundResource", i == today ? R.drawable.widget_today : 0);
+                      cal.add(Calendar.DAY_OF_MONTH, 1);
+                  }
+                  v.setTextViewText(R.id.w_n1, String.valueOf(tours));
+                  v.setTextViewText(R.id.w_n2, km1(km));
+                  v.setTextViewText(R.id.w_n3, String.format(Locale.GERMANY, "%,.0f", hm));
+              }
+
               static RemoteViews build(Context c) {
                   SharedPreferences p = c.getSharedPreferences(PREF, Context.MODE_PRIVATE);
                   long now = System.currentTimeMillis();
@@ -326,6 +369,7 @@ jobs:
                       v.setViewVisibility(R.id.w_run, View.VISIBLE);
                       v.setViewVisibility(R.id.w_start, View.GONE);
                       v.setViewVisibility(R.id.w_stop, View.VISIBLE);
+                      v.setViewVisibility(R.id.w_head, View.VISIBLE);
                       v.setTextViewText(R.id.w_head, "\u25CF  AUFNAHME L\u00C4UFT");
                       v.setTextColor(R.id.w_head, 0xFFFF6B5B);
                       long start = p.getLong("start", now);
@@ -339,12 +383,8 @@ jobs:
                       v.setViewVisibility(R.id.w_idle, View.VISIBLE);
                       v.setViewVisibility(R.id.w_stop, View.GONE);
                       v.setViewVisibility(R.id.w_start, View.VISIBLE);
-                      String m = p.getString("m", "");
-                      v.setTextViewText(R.id.w_head, m.isEmpty() ? "TRAIL LOG" : "TRAIL LOG  \u00B7  " + m);
-                      v.setTextColor(R.id.w_head, 0xFFF2C000);
-                      v.setTextViewText(R.id.w_n1, p.getString("mt", "\u2013"));
-                      v.setTextViewText(R.id.w_n2, p.getString("mk", "\u2013"));
-                      v.setTextViewText(R.id.w_n3, p.getString("mh", "\u2013"));
+                      v.setViewVisibility(R.id.w_head, View.GONE);
+                      week(v, p);
                       v.setOnClickPendingIntent(R.id.w_start, act(c, "start", 2));
                   }
                   return v;
@@ -379,85 +419,363 @@ jobs:
                       android:text="TRAIL LOG"
                       android:textColor="#F2C000"
                       android:textSize="11sp"
-                      android:textStyle="bold" />
+                      android:textStyle="bold"
+                      android:visibility="gone" />
 
                   <LinearLayout
                       android:id="@+id/w_idle"
-                      android:layout_width="wrap_content"
+                      android:layout_width="match_parent"
                       android:layout_height="wrap_content"
-                      android:layout_marginTop="10dp"
-                      android:orientation="horizontal">
+                      android:orientation="vertical">
                       <LinearLayout
-                          android:layout_width="wrap_content"
+                          android:layout_width="match_parent"
                           android:layout_height="wrap_content"
-                          android:layout_marginEnd="18dp"
-                          android:orientation="vertical">
-                          <TextView
-                              android:id="@+id/w_n1"
-                              android:layout_width="wrap_content"
+                          android:orientation="horizontal">
+                          <LinearLayout
+                              android:layout_width="0dp"
                               android:layout_height="wrap_content"
-                              android:fontFamily="sans-serif-medium"
-                              android:includeFontPadding="false"
-                              android:text="0"
-                              android:textColor="#F4F6F7"
-                              android:textSize="24sp" />
-                          <TextView
-                              android:layout_width="wrap_content"
+                              android:layout_weight="1"
+                              android:gravity="center_horizontal"
+                              android:orientation="vertical">
+                              <TextView
+                                  android:id="@+id/w_n1"
+                                  android:layout_width="wrap_content"
+                                  android:layout_height="wrap_content"
+                                  android:fontFamily="sans-serif-medium"
+                                  android:includeFontPadding="false"
+                                  android:text="0"
+                                  android:textColor="#F4F6F7"
+                                  android:textSize="22sp" />
+                              <TextView
+                                  android:layout_width="wrap_content"
+                                  android:layout_height="wrap_content"
+                                  android:layout_marginTop="3dp"
+                                  android:includeFontPadding="false"
+                                  android:letterSpacing="0.08"
+                                  android:text="TOUREN"
+                                  android:textColor="#8E99A1"
+                                  android:textSize="9sp" />
+                          </LinearLayout>
+                          <LinearLayout
+                              android:layout_width="0dp"
                               android:layout_height="wrap_content"
-                              android:layout_marginTop="2dp"
-                              android:includeFontPadding="false"
-                              android:letterSpacing="0.08"
-                              android:text="TOUREN"
-                              android:textColor="#8E99A1"
-                              android:textSize="10sp" />
+                              android:layout_weight="1"
+                              android:gravity="center_horizontal"
+                              android:orientation="vertical">
+                              <TextView
+                                  android:id="@+id/w_n2"
+                                  android:layout_width="wrap_content"
+                                  android:layout_height="wrap_content"
+                                  android:fontFamily="sans-serif-medium"
+                                  android:includeFontPadding="false"
+                                  android:text="0"
+                                  android:textColor="#F4F6F7"
+                                  android:textSize="22sp" />
+                              <TextView
+                                  android:layout_width="wrap_content"
+                                  android:layout_height="wrap_content"
+                                  android:layout_marginTop="3dp"
+                                  android:includeFontPadding="false"
+                                  android:letterSpacing="0.08"
+                                  android:text="KM"
+                                  android:textColor="#8E99A1"
+                                  android:textSize="9sp" />
+                          </LinearLayout>
+                          <LinearLayout
+                              android:layout_width="0dp"
+                              android:layout_height="wrap_content"
+                              android:layout_weight="1"
+                              android:gravity="center_horizontal"
+                              android:orientation="vertical">
+                              <TextView
+                                  android:id="@+id/w_n3"
+                                  android:layout_width="wrap_content"
+                                  android:layout_height="wrap_content"
+                                  android:fontFamily="sans-serif-medium"
+                                  android:includeFontPadding="false"
+                                  android:text="0"
+                                  android:textColor="#F4F6F7"
+                                  android:textSize="22sp" />
+                              <TextView
+                                  android:layout_width="wrap_content"
+                                  android:layout_height="wrap_content"
+                                  android:layout_marginTop="3dp"
+                                  android:includeFontPadding="false"
+                                  android:letterSpacing="0.08"
+                                  android:text="HM"
+                                  android:textColor="#8E99A1"
+                                  android:textSize="9sp" />
+                          </LinearLayout>
                       </LinearLayout>
+                      <View
+                          android:layout_width="match_parent"
+                          android:layout_height="1dp"
+                          android:layout_marginTop="7dp"
+                          android:layout_marginBottom="5dp"
+                          android:background="#2C363E" />
                       <LinearLayout
-                          android:layout_width="wrap_content"
+                          android:layout_width="match_parent"
                           android:layout_height="wrap_content"
-                          android:layout_marginEnd="18dp"
-                          android:orientation="vertical">
-                          <TextView
-                              android:id="@+id/w_n2"
-                              android:layout_width="wrap_content"
+                          android:orientation="horizontal">
+                          <LinearLayout
+                              android:id="@+id/w_dc0"
+                              android:layout_width="0dp"
                               android:layout_height="wrap_content"
-                              android:fontFamily="sans-serif-medium"
-                              android:includeFontPadding="false"
-                              android:text="0"
-                              android:textColor="#F4F6F7"
-                              android:textSize="24sp" />
-                          <TextView
-                              android:layout_width="wrap_content"
+                              android:layout_weight="1"
+                              android:gravity="center_horizontal"
+                              android:orientation="vertical"
+                              android:paddingTop="3dp"
+                              android:paddingBottom="3dp">
+                              <TextView
+                                  android:id="@+id/w_dl0"
+                                  android:layout_width="wrap_content"
+                                  android:layout_height="wrap_content"
+                                  android:includeFontPadding="false"
+                                  android:text="M"
+                                  android:textColor="#8E99A1"
+                                  android:textSize="10sp"
+                                  android:textStyle="bold" />
+                              <TextView
+                                  android:id="@+id/w_di0"
+                                  android:layout_width="wrap_content"
+                                  android:layout_height="20dp"
+                                  android:layout_marginTop="2dp"
+                                  android:gravity="center"
+                                  android:includeFontPadding="false"
+                                  android:text=""
+                                  android:textSize="15sp" />
+                              <TextView
+                                  android:id="@+id/w_dk0"
+                                  android:layout_width="wrap_content"
+                                  android:layout_height="12dp"
+                                  android:includeFontPadding="false"
+                                  android:text=""
+                                  android:textColor="#FFB347"
+                                  android:textSize="10sp"
+                                  android:textStyle="bold" />
+                          </LinearLayout>
+                          <LinearLayout
+                              android:id="@+id/w_dc1"
+                              android:layout_width="0dp"
                               android:layout_height="wrap_content"
-                              android:layout_marginTop="2dp"
-                              android:includeFontPadding="false"
-                              android:letterSpacing="0.08"
-                              android:text="KM"
-                              android:textColor="#8E99A1"
-                              android:textSize="10sp" />
-                      </LinearLayout>
-                      <LinearLayout
-                          android:layout_width="wrap_content"
-                          android:layout_height="wrap_content"
-                          android:layout_marginEnd="18dp"
-                          android:orientation="vertical">
-                          <TextView
-                              android:id="@+id/w_n3"
-                              android:layout_width="wrap_content"
+                              android:layout_weight="1"
+                              android:gravity="center_horizontal"
+                              android:orientation="vertical"
+                              android:paddingTop="3dp"
+                              android:paddingBottom="3dp">
+                              <TextView
+                                  android:id="@+id/w_dl1"
+                                  android:layout_width="wrap_content"
+                                  android:layout_height="wrap_content"
+                                  android:includeFontPadding="false"
+                                  android:text="D"
+                                  android:textColor="#8E99A1"
+                                  android:textSize="10sp"
+                                  android:textStyle="bold" />
+                              <TextView
+                                  android:id="@+id/w_di1"
+                                  android:layout_width="wrap_content"
+                                  android:layout_height="20dp"
+                                  android:layout_marginTop="2dp"
+                                  android:gravity="center"
+                                  android:includeFontPadding="false"
+                                  android:text=""
+                                  android:textSize="15sp" />
+                              <TextView
+                                  android:id="@+id/w_dk1"
+                                  android:layout_width="wrap_content"
+                                  android:layout_height="12dp"
+                                  android:includeFontPadding="false"
+                                  android:text=""
+                                  android:textColor="#FFB347"
+                                  android:textSize="10sp"
+                                  android:textStyle="bold" />
+                          </LinearLayout>
+                          <LinearLayout
+                              android:id="@+id/w_dc2"
+                              android:layout_width="0dp"
                               android:layout_height="wrap_content"
-                              android:fontFamily="sans-serif-medium"
-                              android:includeFontPadding="false"
-                              android:text="0"
-                              android:textColor="#F4F6F7"
-                              android:textSize="24sp" />
-                          <TextView
-                              android:layout_width="wrap_content"
+                              android:layout_weight="1"
+                              android:gravity="center_horizontal"
+                              android:orientation="vertical"
+                              android:paddingTop="3dp"
+                              android:paddingBottom="3dp">
+                              <TextView
+                                  android:id="@+id/w_dl2"
+                                  android:layout_width="wrap_content"
+                                  android:layout_height="wrap_content"
+                                  android:includeFontPadding="false"
+                                  android:text="M"
+                                  android:textColor="#8E99A1"
+                                  android:textSize="10sp"
+                                  android:textStyle="bold" />
+                              <TextView
+                                  android:id="@+id/w_di2"
+                                  android:layout_width="wrap_content"
+                                  android:layout_height="20dp"
+                                  android:layout_marginTop="2dp"
+                                  android:gravity="center"
+                                  android:includeFontPadding="false"
+                                  android:text=""
+                                  android:textSize="15sp" />
+                              <TextView
+                                  android:id="@+id/w_dk2"
+                                  android:layout_width="wrap_content"
+                                  android:layout_height="12dp"
+                                  android:includeFontPadding="false"
+                                  android:text=""
+                                  android:textColor="#FFB347"
+                                  android:textSize="10sp"
+                                  android:textStyle="bold" />
+                          </LinearLayout>
+                          <LinearLayout
+                              android:id="@+id/w_dc3"
+                              android:layout_width="0dp"
                               android:layout_height="wrap_content"
-                              android:layout_marginTop="2dp"
-                              android:includeFontPadding="false"
-                              android:letterSpacing="0.08"
-                              android:text="HM"
-                              android:textColor="#8E99A1"
-                              android:textSize="10sp" />
+                              android:layout_weight="1"
+                              android:gravity="center_horizontal"
+                              android:orientation="vertical"
+                              android:paddingTop="3dp"
+                              android:paddingBottom="3dp">
+                              <TextView
+                                  android:id="@+id/w_dl3"
+                                  android:layout_width="wrap_content"
+                                  android:layout_height="wrap_content"
+                                  android:includeFontPadding="false"
+                                  android:text="D"
+                                  android:textColor="#8E99A1"
+                                  android:textSize="10sp"
+                                  android:textStyle="bold" />
+                              <TextView
+                                  android:id="@+id/w_di3"
+                                  android:layout_width="wrap_content"
+                                  android:layout_height="20dp"
+                                  android:layout_marginTop="2dp"
+                                  android:gravity="center"
+                                  android:includeFontPadding="false"
+                                  android:text=""
+                                  android:textSize="15sp" />
+                              <TextView
+                                  android:id="@+id/w_dk3"
+                                  android:layout_width="wrap_content"
+                                  android:layout_height="12dp"
+                                  android:includeFontPadding="false"
+                                  android:text=""
+                                  android:textColor="#FFB347"
+                                  android:textSize="10sp"
+                                  android:textStyle="bold" />
+                          </LinearLayout>
+                          <LinearLayout
+                              android:id="@+id/w_dc4"
+                              android:layout_width="0dp"
+                              android:layout_height="wrap_content"
+                              android:layout_weight="1"
+                              android:gravity="center_horizontal"
+                              android:orientation="vertical"
+                              android:paddingTop="3dp"
+                              android:paddingBottom="3dp">
+                              <TextView
+                                  android:id="@+id/w_dl4"
+                                  android:layout_width="wrap_content"
+                                  android:layout_height="wrap_content"
+                                  android:includeFontPadding="false"
+                                  android:text="F"
+                                  android:textColor="#8E99A1"
+                                  android:textSize="10sp"
+                                  android:textStyle="bold" />
+                              <TextView
+                                  android:id="@+id/w_di4"
+                                  android:layout_width="wrap_content"
+                                  android:layout_height="20dp"
+                                  android:layout_marginTop="2dp"
+                                  android:gravity="center"
+                                  android:includeFontPadding="false"
+                                  android:text=""
+                                  android:textSize="15sp" />
+                              <TextView
+                                  android:id="@+id/w_dk4"
+                                  android:layout_width="wrap_content"
+                                  android:layout_height="12dp"
+                                  android:includeFontPadding="false"
+                                  android:text=""
+                                  android:textColor="#FFB347"
+                                  android:textSize="10sp"
+                                  android:textStyle="bold" />
+                          </LinearLayout>
+                          <LinearLayout
+                              android:id="@+id/w_dc5"
+                              android:layout_width="0dp"
+                              android:layout_height="wrap_content"
+                              android:layout_weight="1"
+                              android:gravity="center_horizontal"
+                              android:orientation="vertical"
+                              android:paddingTop="3dp"
+                              android:paddingBottom="3dp">
+                              <TextView
+                                  android:id="@+id/w_dl5"
+                                  android:layout_width="wrap_content"
+                                  android:layout_height="wrap_content"
+                                  android:includeFontPadding="false"
+                                  android:text="S"
+                                  android:textColor="#8E99A1"
+                                  android:textSize="10sp"
+                                  android:textStyle="bold" />
+                              <TextView
+                                  android:id="@+id/w_di5"
+                                  android:layout_width="wrap_content"
+                                  android:layout_height="20dp"
+                                  android:layout_marginTop="2dp"
+                                  android:gravity="center"
+                                  android:includeFontPadding="false"
+                                  android:text=""
+                                  android:textSize="15sp" />
+                              <TextView
+                                  android:id="@+id/w_dk5"
+                                  android:layout_width="wrap_content"
+                                  android:layout_height="12dp"
+                                  android:includeFontPadding="false"
+                                  android:text=""
+                                  android:textColor="#FFB347"
+                                  android:textSize="10sp"
+                                  android:textStyle="bold" />
+                          </LinearLayout>
+                          <LinearLayout
+                              android:id="@+id/w_dc6"
+                              android:layout_width="0dp"
+                              android:layout_height="wrap_content"
+                              android:layout_weight="1"
+                              android:gravity="center_horizontal"
+                              android:orientation="vertical"
+                              android:paddingTop="3dp"
+                              android:paddingBottom="3dp">
+                              <TextView
+                                  android:id="@+id/w_dl6"
+                                  android:layout_width="wrap_content"
+                                  android:layout_height="wrap_content"
+                                  android:includeFontPadding="false"
+                                  android:text="S"
+                                  android:textColor="#8E99A1"
+                                  android:textSize="10sp"
+                                  android:textStyle="bold" />
+                              <TextView
+                                  android:id="@+id/w_di6"
+                                  android:layout_width="wrap_content"
+                                  android:layout_height="20dp"
+                                  android:layout_marginTop="2dp"
+                                  android:gravity="center"
+                                  android:includeFontPadding="false"
+                                  android:text=""
+                                  android:textSize="15sp" />
+                              <TextView
+                                  android:id="@+id/w_dk6"
+                                  android:layout_width="wrap_content"
+                                  android:layout_height="12dp"
+                                  android:includeFontPadding="false"
+                                  android:text=""
+                                  android:textColor="#FFB347"
+                                  android:textSize="10sp"
+                                  android:textStyle="bold" />
+                          </LinearLayout>
                       </LinearLayout>
                   </LinearLayout>
 
@@ -535,9 +853,15 @@ jobs:
               </LinearLayout>
 
               <LinearLayout
-                  android:id="@+id/w_start"
                   android:layout_width="84dp"
                   android:layout_height="match_parent"
+                  android:layout_marginStart="10dp"
+                  android:orientation="vertical">
+              <LinearLayout
+                  android:id="@+id/w_start"
+                  android:layout_width="84dp"
+                  android:layout_height="0dp"
+                  android:layout_weight="1"
                   android:background="@drawable/widget_btn_start"
                   android:gravity="center"
                   android:orientation="vertical">
@@ -563,7 +887,8 @@ jobs:
               <LinearLayout
                   android:id="@+id/w_stop"
                   android:layout_width="84dp"
-                  android:layout_height="match_parent"
+                  android:layout_height="0dp"
+                  android:layout_weight="1"
                   android:background="@drawable/widget_btn_stop"
                   android:gravity="center"
                   android:orientation="vertical"
@@ -586,8 +911,26 @@ jobs:
                       android:textSize="12sp"
                       android:textStyle="bold" />
               </LinearLayout>
+              <ImageView
+                  android:layout_width="84dp"
+                  android:layout_height="20dp"
+                  android:layout_marginTop="6dp"
+                  android:alpha="0.8"
+                  android:contentDescription="Trail Log"
+                  android:scaleType="fitCenter"
+                  android:src="@drawable/widget_brand" />
+              </LinearLayout>
           </LinearLayout>
           XML
+
+          cat > $RES/drawable/widget_today.xml <<'XML'
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+              <solid android:color="#1FF2C000" />
+              <corners android:radius="8dp" />
+          </shape>
+          XML
+          mkdir -p $RES/drawable-nodpi && cp icon/widget-brand.png $RES/drawable-nodpi/widget_brand.png
 
           cat > $RES/drawable/widget_bg.xml <<'XML'
           <?xml version="1.0" encoding="utf-8"?>
@@ -618,7 +961,7 @@ jobs:
           <?xml version="1.0" encoding="utf-8"?>
           <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
               android:minWidth="250dp"
-              android:minHeight="110dp"
+              android:minHeight="130dp"
               android:targetCellWidth="4"
               android:targetCellHeight="2"
               android:updatePeriodMillis="1800000"
