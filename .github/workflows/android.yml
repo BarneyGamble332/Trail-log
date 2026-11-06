@@ -401,7 +401,10 @@ jobs:
               android:background="@drawable/widget_bg"
               android:gravity="center_vertical"
               android:orientation="horizontal"
-              android:padding="12dp">
+              android:paddingStart="12dp"
+              android:paddingEnd="10dp"
+              android:paddingTop="8dp"
+              android:paddingBottom="8dp">
 
               <LinearLayout
                   android:layout_width="0dp"
@@ -972,7 +975,9 @@ jobs:
           <?xml version="1.0" encoding="utf-8"?>
           <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
               android:minWidth="250dp"
-              android:minHeight="130dp"
+              android:minHeight="100dp"
+              android:minResizeHeight="90dp"
+              android:minResizeWidth="220dp"
               android:targetCellWidth="4"
               android:targetCellHeight="2"
               android:updatePeriodMillis="1800000"

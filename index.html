@@ -434,6 +434,13 @@ canvas.prof{width:100%;height:120px;display:block}
     <div class="ex-btns"><button class="btn" id="restDrop">Verwerfen</button><button class="btn primary" id="restSave">Speichern</button></div>
   </div>
 </div>
+<div id="stopDlg" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="stopHead">
+  <div class="busy-card ex-card">
+    <h2 id="stopHead">Aufzeichnung beenden?</h2>
+    <p class="note" id="stopInfo"></p>
+    <div class="ex-btns"><button class="btn" id="stopGoOn">Weiter aufzeichnen</button><button class="btn primary" id="stopEnd">Beenden &amp; speichern</button></div>
+  </div>
+</div>
 <div id="toast" hidden role="status"></div>
 
 <input type="file" id="zipInput" accept=".zip,application/zip" hidden>
@@ -1508,7 +1515,16 @@ window.addEventListener('resize',()=>{ if(TOUR.sel){ const a=byId.get(TOUR.sel);
 window.addEventListener('error',ev=>{ if(window.Capacitor&&Capacitor.isNativePlatform&&Capacitor.isNativePlatform()) toast('Fehler: '+String(ev.message||'').slice(0,100)+' (Zeile '+ev.lineno+')',9000); });
 /* Knöpfe zuerst verdrahten: sie sollen auch dann gehen, wenn weiter unten etwas schiefläuft */
 $('#rcGo').onclick=recStart;
-$('#rhStop').onclick=()=>recStop(false); $('#rpStop').onclick=()=>recStop(false);
+/* Stopp fragt nach: wirklich beenden oder weiter aufzeichnen (Aufnahme läuft währenddessen weiter) */
+function stopAsk(){
+  if(!REC.on) return;
+  $('#stopInfo').textContent=`${fmtClock((Date.now()-REC.t0)/1000)} · ${fmt1.format(REC.dist/1000)} km · ${fmt0.format(REC.gain)} Hm`;
+  $('#stopDlg').hidden=false;
+}
+$('#stopGoOn').onclick=()=>{ $('#stopDlg').hidden=true; };
+$('#stopEnd').onclick=()=>{ $('#stopDlg').hidden=true; if(REC.on) recStop(false); };
+$('#stopDlg').addEventListener('click',e=>{ if(e.target.id==='stopDlg') $('#stopDlg').hidden=true; });
+$('#rhStop').onclick=stopAsk; $('#rpStop').onclick=stopAsk;
 $('#rpDrop').onclick=()=>{ if($('#rpDrop').dataset.arm){ delete $('#rpDrop').dataset.arm; $('#rpDrop').textContent='Verwerfen'; recStop(true); } else { $('#rpDrop').dataset.arm=1; $('#rpDrop').textContent='Wirklich verwerfen?'; setTimeout(()=>{ delete $('#rpDrop').dataset.arm; $('#rpDrop').textContent='Verwerfen'; },3000); } };
 $('#btnSet').onclick=()=>{ const on=!$('#pane-data').hidden; if(on&&sheet.classList.contains('open')&&window.innerWidth<900){ sheet.classList.remove('open'); } else { openTab('data'); sheet.classList.add('open'); } };
 /* Native Android-App (Capacitor): Standort laeuft als Vordergrunddienst weiter, auch bei ausgeschaltetem Bildschirm */
@@ -1733,7 +1749,7 @@ if(TW){
     const a=ev&&ev.action;
     setTimeout(()=>{
       if(a==='start'){ openTab('rec'); if(!REC.on) recStart(); }
-      else if(a==='stop'){ if(REC.on) recStop(false); }
+      else if(a==='stop'){ if(REC.on) stopAsk(); }
     },700);
   });
   setTimeout(()=>widgetPush(true),1500);
