@@ -1738,7 +1738,9 @@ function widgetPush(force,raw){
     const mt=String(a.length), mk=fmt0.format(a.reduce((s,x)=>s+x.dist,0)/1000), mh=fmt0.format(a.reduce((s,x)=>s+x.gain,0));
     // Tageswerte der letzten 14 Tage {"2026-11-06":[Touren,km,Hm]}; die Woche rechnet das Widget selbst aus
     const days={}, from=n.getTime()-14*864e5, key=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-    for(const x of S.acts){ if(x.d<from) continue; const k=key(new Date(x.d)), v=days[k]||(days[k]=[0,0,0]); v[0]++; v[1]=Math.round((v[1]+x.dist/1000)*100)/100; v[2]+=Math.round(x.gain||0); }
+    // Widget zählt nur Radfahrten (MTB, Rennrad/Rad, E-Bike, E-MTB, Gravel), keine virtuellen
+    const BIKE=new Set(['ride','mountainbikeride','ebikeride','emountainbikeride','gravelride']);
+    for(const x of S.acts){ if(x.d<from||!BIKE.has(x.t)) continue; const k=key(new Date(x.d)), v=days[k]||(days[k]=[0,0,0]); v[0]++; v[1]=Math.round((v[1]+x.dist/1000)*100)/100; v[2]+=Math.round(x.gain||0); }
     const pr=Promise.resolve(TW.update({running:!!REC.on,start:REC.t0||0,dist:fmt1.format((REC.dist||0)/1000),gain:fmt0.format(REC.gain||0),m:mon,mt,mk,mh,days:JSON.stringify(days)}));
     if(raw) return pr;
     pr.catch(e=>{ if(!widgetPush.err){ widgetPush.err=1; toast('Widget: '+String(e&&e.message||e).slice(0,100),6000); } });
