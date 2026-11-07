@@ -6,11 +6,14 @@ jobs:
     steps:
       - name: ATKIS WFS
         run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq gdal-bin >/dev/null
           U='https://geoservices.bayern.de/wfs/v1/ogc_atkis_basisdlm.cgi'
-          curl -sS "$U?service=WFS&version=2.0.0&request=GetCapabilities" -o cap.xml; ls -la cap.xml
-          echo "== FeatureTypes"; grep -o '<Name>[^<]*</Name>' cap.xml | sed 's/<[^>]*>//g' | tr '\n' ' '; echo
-          echo "== Formate"; grep -o 'outputFormat[^>]*>' cap.xml | head -3; grep -io '<ows:Value>[^<]*</ows:Value>' cap.xml | sed 's/<[^>]*>//g' | sort -u | head -40 | tr '\n' '|'; echo
-          for t in $(grep -o '<Name>[^<]*</Name>' cap.xml | sed 's/<[^>]*>//g' | grep -iE 'weg|fahrweg|strasse|straße|pfad'); do
-            echo "==== $t"; curl -sS "$U?service=WFS&version=2.0.0&request=DescribeFeatureType&typeNames=$t" | grep -o 'name="[^"]*"' | tr '\n' ' ' | head -c 3000; echo
-            curl -sS "$U?service=WFS&version=2.0.0&request=GetFeature&typeNames=$t&count=4&srsName=EPSG:4326&bbox=47.47,11.05,47.51,11.12,EPSG:4326" | head -c 4000; echo
+          curl -sS "$U?service=WFS&version=2.0.0&request=GetCapabilities" -o cap.xml
+          echo "== Typen"; grep -oE '<(wfs:)?Name>[^<]*<' cap.xml | sed -E 's/<[^>]*>//g;s/<$//' | tr '\n' ' '; echo
+          echo "== ogrinfo"; ogrinfo -ro -so "WFS:$U" 2>&1 | head -80
+          for t in $(grep -oE '<(wfs:)?Name>[^<]*<' cap.xml | sed -E 's/<[^>]*>//g;s/<$//' | grep -iE 'weg|strasse|pfad|fahr'); do
+            echo "==== $t"
+            ogrinfo -ro -spat 11.05 47.47 11.12 47.51 -spat_srs EPSG:4326 "WFS:$U" "$t" -fc 2>&1 | head -5
+            ogrinfo -ro -spat 11.05 47.47 11.12 47.51 -spat_srs EPSG:4326 -limit 3 "WFS:$U" "$t" 2>&1 | grep -v "^\s*$" | head -60
+            ogr2ogr -f CSV /dev/stdout -spat 11.05 47.47 11.12 47.51 -spat_srs EPSG:4326 "WFS:$U" "$t" 2>/dev/null | head -1
           done
