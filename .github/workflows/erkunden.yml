@@ -1,0 +1,16 @@
+name: Erkunden (temporär)
+on: workflow_dispatch
+jobs:
+  e:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: ATKIS WFS
+        run: |
+          U='https://geoservices.bayern.de/wfs/v1/ogc_atkis_basisdlm.cgi'
+          curl -sS "$U?service=WFS&version=2.0.0&request=GetCapabilities" -o cap.xml; ls -la cap.xml
+          echo "== FeatureTypes"; grep -o '<Name>[^<]*</Name>' cap.xml | sed 's/<[^>]*>//g' | tr '\n' ' '; echo
+          echo "== Formate"; grep -o 'outputFormat[^>]*>' cap.xml | head -3; grep -io '<ows:Value>[^<]*</ows:Value>' cap.xml | sed 's/<[^>]*>//g' | sort -u | head -40 | tr '\n' '|'; echo
+          for t in $(grep -o '<Name>[^<]*</Name>' cap.xml | sed 's/<[^>]*>//g' | grep -iE 'weg|fahrweg|strasse|straße|pfad'); do
+            echo "==== $t"; curl -sS "$U?service=WFS&version=2.0.0&request=DescribeFeatureType&typeNames=$t" | grep -o 'name="[^"]*"' | tr '\n' ' ' | head -c 3000; echo
+            curl -sS "$U?service=WFS&version=2.0.0&request=GetFeature&typeNames=$t&count=4&srsName=EPSG:4326&bbox=47.47,11.05,47.51,11.12,EPSG:4326" | head -c 4000; echo
+          done
