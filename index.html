@@ -1648,6 +1648,8 @@ async function recStart(){
   if(!NATIVE&&(!recHttps()||!navigator.geolocation)){ recWarn(); return; }
   if(!NATIVE&&navigator.permissions){ try{ const st=await navigator.permissions.query({name:'geolocation'}); if(st.state==='denied'){ recWarn('denied'); return; } }catch(e){} }
   REC.type=$('#rcType').value; ls.set('rec.type',REC.type);
+  // zuletzt genutzte Rad- bzw. Geh-Art für die Widgets merken
+  if(['hike','walk','snowshoe'].includes(REC.type)) ls.set('lastHike',REC.type); else if(['mountainbikeride','emountainbikeride','ebikeride','ride','gravelride'].includes(REC.type)) ls.set('lastBike',REC.type);
   Object.assign(REC,{on:true,pts:[],t0:Date.now(),dist:0,follow:true,dot:null,rej:0,gain:0,ref:null,ab:[]});
   recLayer.clearLayers(); selLayer.clearLayers(); TOUR.sel=null; renderTours();
   REC.line=L.polyline([],{pane:'route',interactive:false,color:'#1b7fe8',weight:5,lineJoin:'round',lineCap:'round'}).addTo(recLayer);
@@ -1852,9 +1854,14 @@ if(TW){
   TW.addListener('widgetAction',ev=>{
     const a=ev&&ev.action;
     setTimeout(()=>{
-      if(a==='start'||a==='starthike'){ openTab('rec'); if(!REC.on){ const sel=$('#rcType'), bike=['mountainbikeride','emountainbikeride','ride'].includes(sel.value);
-        // Wander-Widget startet Wandern; Rad-Widget behält die zuletzt gewählte Radart
-        if(a==='starthike') sel.value='hike'; else if(!bike) sel.value='mountainbikeride'; recStart(); } }
+      if(a==='start'||a==='starthike'){
+        if(REC.on){ TW.toBackground&&TW.toBackground(); return; }
+        const sel=$('#rcType'), want=a==='starthike'?ls.get('lastHike','hike'):ls.get('lastBike','mountainbikeride');
+        if([...sel.options].some(o=>o.value===want)) sel.value=want;
+        openTab('rec');
+        // Aufnahme starten, dann App wieder in den Hintergrund (Aufnahme läuft weiter)
+        Promise.resolve(recStart()).then(()=>{ if(REC.on&&TW.toBackground) setTimeout(()=>TW.toBackground().catch(()=>{}),400); });
+      }
       else if(a==='stop'){ if(REC.on) stopAsk(); }
     },700);
   });

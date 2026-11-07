@@ -155,6 +155,16 @@ jobs:
               private long lastSent = 0;
               private double lastH = -1000;
 
+              /* Nach Start aus dem Widget: App wieder verschwinden lassen, Aufnahme läuft im Hintergrund weiter */
+              @PluginMethod
+              public void toBackground(PluginCall call) {
+                  if (getActivity() != null) getActivity().runOnUiThread(() -> {
+                      getActivity().moveTaskToBack(true);
+                      getActivity().overridePendingTransition(0, 0);
+                  });
+                  call.resolve();
+              }
+
               @PluginMethod
               public void startCompass(PluginCall call) {
                   if (sm == null) sm = (SensorManager) getContext().getSystemService(android.content.Context.SENSOR_SERVICE);
@@ -377,7 +387,8 @@ jobs:
                   Intent i = new Intent(c, MainActivity.class);
                   i.setAction("de.bernhard.traillog.WIDGET_" + action);
                   i.putExtra("tl_action", action);
-                  i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                  i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP
+                      | (action.startsWith("start") ? Intent.FLAG_ACTIVITY_NO_ANIMATION : 0));
                   return PendingIntent.getActivity(c, code, i, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
               }
 
