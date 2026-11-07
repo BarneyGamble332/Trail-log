@@ -44,6 +44,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq osmium-tool gdal-bin >/dev/null
+          pip install --quiet osmium shapely numpy
           osmium --version | head -1
           gdalinfo --version
           mkdir -p work

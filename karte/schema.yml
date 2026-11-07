@@ -3,11 +3,13 @@
 # Wichtig für MTB: Wege behalten mtb:scale, sac_scale, tracktype, surface und trail_visibility.
 schema_name: Trail Log MTB
 schema_description: Offline-Karte fürs Mountainbiken (Wege mit S-Skala, Höhenlinien, Gipfel, Hütten, Almen)
-attribution: <a href="https://www.openstreetmap.org/copyright">&copy; OpenStreetMap-Mitwirkende</a>, Höhenlinien &copy; Copernicus DEM
+attribution: <a href="https://www.openstreetmap.org/copyright">&copy; OpenStreetMap-Mitwirkende</a>, Höhenlinien &copy; Copernicus DEM, Forstweg-Abgleich: Datenquelle Bayerische Vermessungsverwaltung – www.geodaten.bayern.de (CC BY 4.0)
 args:
   osm_path: region.osm.pbf
   contours_major: contours_major.gpkg
   contours_minor: contours_minor.gpkg
+  radrouten: radrouten.gpkg
+  forstwege: forstwege.gpkg
   maxzoom: 14
 sources:
   osm:
@@ -20,6 +22,14 @@ sources:
   contours_minor:
     type: geopackage
     local_path: '${ args.contours_minor }'
+    projection: EPSG:4326
+  radrouten:
+    type: geopackage
+    local_path: '${ args.radrouten }'
+    projection: EPSG:4326
+  forstwege:
+    type: geopackage
+    local_path: '${ args.forstwege }'
     projection: EPSG:4326
 
 layers:
@@ -182,6 +192,45 @@ layers:
       tolerance: 0.5
       tolerance_at_max_zoom: 0.125
       buffer: 4
+
+# ---------- Radrouten (aus OSM-Relationen, siehe radrouten.py) ----------
+- id: cycle
+  features:
+  - source: radrouten
+    geometry: line
+    min_zoom:
+      default_value: 9
+      overrides:
+        7:
+          net: [icn, ncn]
+    include_when:
+      net: [icn, ncn, rcn]
+    attributes:
+    - key: net
+    - key: name
+      min_zoom: 10
+    - key: names
+      min_zoom: 12
+  tile_post_process:
+    merge_line_strings:
+      min_length: 0.5
+      min_length_at_max_zoom: 0
+      tolerance: 0.5
+      tolerance_at_max_zoom: 0.125
+      buffer: 4
+
+# ---------- Wahrscheinliche Forstwege (OSM-Pfad auf amtlichem Fahrweg, siehe atkis.py) ----------
+- id: fw
+  features:
+  - source: forstwege
+    geometry: line
+    min_zoom: 11
+    include_when:
+      fw: 1
+    attributes:
+    - key: fw
+    - key: name
+      min_zoom: 13
 
 # ---------- Bahn und Seilbahnen ----------
 - id: transit
