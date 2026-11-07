@@ -1943,7 +1943,7 @@ const KLIB={css:'https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-g
   pm:'https://cdn.jsdelivr.net/npm/pmtiles@4.5.0/dist/pmtiles.js'};
 const K={idx:null,idxErr:null,local:new Map(),proto:null,libs:null,seq:0,srcKey:null,remote:false,preview:null,busy:false};
 const mb=n=>fmt0.format(n/1e6);
-const K_ATTR='Karte © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap-Mitwirkende</a> · Höhen © Copernicus DEM · Forstweg-Abgleich: Datenquelle <a href="https://www.geodaten.bayern.de">Bayerische Vermessungsverwaltung</a> (CC BY 4.0)';
+const K_ATTR='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · Copernicus DEM · <a href="https://www.geodaten.bayern.de">Bayer. Vermessungsverwaltung</a> (CC BY 4.0)';
 
 function kScript(src){ return new Promise((res,rej)=>{ const s=document.createElement('script'); s.src=src; s.onload=res; s.onerror=()=>rej(new Error('Laden fehlgeschlagen: '+src)); document.head.appendChild(s); }); }
 function kLibs(){
@@ -2055,7 +2055,7 @@ function mtbStyle(key){
       paint:{'line-color':'#fff6e6','line-width':Z(11,0.7,13,1.5,16,3),'line-dasharray':['case',TRACK_GOOD,['literal',[1,0]],['literal',[7,3]]]}},
     // Wanderweg / Pfad: rote Strichlinie
     {id:'path',type:'line',source:src,'source-layer':'road',filter:cls(PATHS),
-      paint:{'line-color':'#c62828','line-opacity':['match',['get','vis'],['bad','horrible','no'],0.45,1],'line-width':Z(11,0.7,13,1.4,16,2.6),'line-dasharray':['match',['get','class'],'steps',['literal',[0.6,0.6]],['literal',[2.2,1.6]]]}},
+      paint:{'line-color':o.scale?['case',['has','mtb'],'#ffffff','#c62828']:'#c62828','line-opacity':['match',['get','vis'],['bad','horrible','no'],0.45,1],'line-width':Z(11,0.7,13,1.4,16,2.6),'line-dasharray':['match',['get','class'],'steps',['literal',[0.6,0.6]],['literal',[2.2,1.6]]]}},
     // Pfad, laut amtlichen Daten (ATKIS) aber befahrbarer Weg: wahrscheinlich Forstweg (liegt über dem Pfad und deckt ihn ab)
     {id:'fw-case',type:'line',source:src,'source-layer':'fw',paint:{'line-color':'#8a5a2b','line-width':Z(11,1.4,13,3,16,6),'line-dasharray':[1.2,1]}},
     {id:'fw',type:'line',source:src,'source-layer':'fw',paint:{'line-color':'#fff6e6','line-width':Z(11,0.8,13,1.7,16,3.4)}},
