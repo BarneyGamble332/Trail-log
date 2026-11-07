@@ -1165,7 +1165,9 @@ $('#btnWipe').onclick=async function(){
 const sheet=$('#sheet');
 function openTab(name){
   document.querySelectorAll('.tab').forEach(b=>{ const on=b.dataset.tab===name; b.classList.toggle('on',on); b.setAttribute('aria-selected',on); });
+  const changed=ls.get('tab',null)!==name;
   document.querySelectorAll('.pane').forEach(p=>p.hidden=p.id!=='pane-'+name);
+  if(changed){ const ps=$('.panes'); if(ps) ps.scrollTop=0; }   // anderer Reiter: Liste beginnt wieder oben
   ls.set('tab',name);
   $('#btnSet').classList.toggle('on',name==='data');
   if(name==='tours'&&typeof TOUR!=='undefined'&&TOUR.sel){ const a=byId.get(TOUR.sel); if(a) requestAnimationFrame(()=>drawProfile($('#prof'),a)); }
