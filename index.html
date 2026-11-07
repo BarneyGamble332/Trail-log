@@ -1383,25 +1383,47 @@ function meHead(){
   const h=Date.now()-ME.gpsT<5000?ME.gpsHead:ME.compass;
   const c=ME.m&&ME.m.getElement()&&ME.m.getElement().querySelector('.me-cone'); if(!c) return;
   if(h==null){ c.style.opacity='0'; return; }
-  c.style.opacity='1'; c.style.transform=`rotate(${Math.round(h)}deg)`;
+  // fortlaufender Winkel, damit die Animation von 359° auf 1° den kurzen Weg nimmt
+  if(ME.rot==null) ME.rot=h; else ME.rot+=((h-ME.rot%360+540)%360)-180;
+  c.style.opacity='1'; c.style.transform=`rotate(${ME.rot.toFixed(1)}deg)`;
 }
 function meHide(){ if(ME.m){ map.removeLayer(ME.m); ME.m=null; } }
 map.on('zoomend',()=>{ if(ME.m&&ME.ll) meShow(ME.ll[0],ME.ll[1],ME.acc,null,0); });
 /* Kompass: absolute Ausrichtung (Android). Leicht geglättet, Bildschirmdrehung berücksichtigt. */
-let compassOn=false;
-function compassStart(){
+let compassOn=false, compassWeb=null;
+// Missweisung: Kompass zeigt magnetisch Nord, im Alpenraum liegt geografisch Nord etwa 4° westlich davon
+const DECL=4;
+function compassSet(h){
+  h=(h+DECL+360)%360;
+  if(ME.compass==null) ME.compass=h; else { const d=((h-ME.compass+540)%360)-180; ME.compass=(ME.compass+d*0.35+360)%360; }
+  meHead();
+}
+/* Blickrichtung aus Euler-Winkeln (W3C), auch bei schräg gehaltenem Handy */
+function eulerHeading(a,b,g){
+  const r=Math.PI/180, x=b*r, y=g*r, z=a*r, cX=Math.cos(x), cY=Math.cos(y), cZ=Math.cos(z), sX=Math.sin(x), sY=Math.sin(y), sZ=Math.sin(z);
+  const Vx=-cZ*sY-sZ*sX*cY, Vy=-sZ*sY+cZ*sX*cY; let h=Math.atan(Vx/Vy);
+  if(Vy<0) h+=Math.PI; else if(Vx<0) h+=2*Math.PI; return h*180/Math.PI;
+}
+async function compassStart(){
   if(compassOn) return; compassOn=true;
+  // In der App: echter Android-Kompass (Rotationsvektor)
+  const G=typeof TW!=='undefined'&&TW?TW:(NATIVE?nativePlugin('TrailWidget'):null);
+  if(G&&G.startCompass){
+    try{ if(!compassWeb) compassWeb=await G.addListener('compass',r=>compassSet(r.h)); await G.startCompass(); return; }catch(e){ console.warn('Kompass',e); }
+  }
+  // Browser: nur absolute Werte (relative zeigen in eine zufällige Richtung)
   const on=e=>{
-    let h=null;
-    if(typeof e.webkitCompassHeading==='number') h=e.webkitCompassHeading;
-    else if(e.absolute!==false&&e.alpha!=null) h=360-e.alpha;
-    if(h==null) return;
-    h=(h+((screen.orientation&&screen.orientation.angle)||0)+360)%360;
-    if(ME.compass==null) ME.compass=h; else { let d=((h-ME.compass+540)%360)-180; ME.compass=(ME.compass+d*0.25+360)%360; }
-    meHead();
+    if(typeof e.webkitCompassHeading==='number'){ compassSet(e.webkitCompassHeading-DECL); return; }
+    if(e.absolute!==true||e.alpha==null) return;
+    const h=Math.abs(e.beta||0)>45?eulerHeading(e.alpha,e.beta,e.gamma):360-e.alpha;
+    compassSet((h+((screen.orientation&&screen.orientation.angle)||0)+360)%360);
   };
-  if('ondeviceorientationabsolute' in window) window.addEventListener('deviceorientationabsolute',on);
-  else window.addEventListener('deviceorientation',on);
+  window.addEventListener('deviceorientationabsolute',on); window.addEventListener('deviceorientation',on);
+}
+function compassStop(){
+  if(!compassOn||ME.on||REC.on) return; compassOn=false; ME.compass=null;
+  const G=typeof TW!=='undefined'&&TW?TW:(NATIVE?nativePlugin('TrailWidget'):null);
+  if(G&&G.stopCompass) G.stopCompass().catch(()=>{});
 }
 /* Knopf „Wo bin ich“: an = Position zeigen und hinfahren, nochmal = aus (während der Aufnahme bleibt sie sichtbar) */
 function locOn(){
@@ -1416,7 +1438,7 @@ function locOn(){
 function locOff(){
   ME.on=false; locBtn.classList.remove('on');
   if(ME.watch!=null){ navigator.geolocation.clearWatch(ME.watch); ME.watch=null; }
-  if(!REC.on) meHide();
+  if(!REC.on){ meHide(); compassStop(); }
 }
 const LocCtl=L.Control.extend({options:{position:'topright'},
   onAdd(){ const b=L.DomUtil.create('button','export-btn loc-btn'); b.type='button'; b.title='Wo bin ich'; b.setAttribute('aria-label',b.title);
@@ -1695,7 +1717,7 @@ async function recStop(discard){
   try{ navigator.geolocation.clearWatch(REC.watch); }catch(e){} if(NATIVE&&REC.bgId!=null){ try{ await BG.removeWatcher({id:REC.bgId}); }catch(e){} REC.bgId=null; } clearInterval(REC.tick); try{ REC.wl&&REC.wl.release(); }catch(e){}
   const pts=REC.pts, type=REC.type, t0=REC.t0; REC.on=false; REC.pts=[]; REC.dist=0; REC.gain=0; REC.wl=null; widgetPush(true);
   document.body.classList.remove('recording'); recUI(); $('#recHud').hidden=true; $('#navHud').hidden=true; NAV.idx=0;
-  if(!ME.on) meHide(); recLayer.clearLayers(); ls.set('rec',null);
+  if(!ME.on){ meHide(); compassStop(); } recLayer.clearLayers(); ls.set('rec',null);
   if(!discard) await saveRecording(pts,type,t0);
 }
 async function saveRecording(pts,type,t0){

@@ -118,6 +118,12 @@ jobs:
           package de.bernhard.traillog;
 
           import android.Manifest;
+          import android.hardware.Sensor;
+          import android.hardware.SensorEvent;
+          import android.hardware.SensorEventListener;
+          import android.hardware.SensorManager;
+          import android.view.Surface;
+          import android.view.WindowManager;
           import android.content.ContentResolver;
           import android.content.ContentValues;
           import android.content.Intent;
@@ -140,7 +146,61 @@ jobs:
           import com.getcapacitor.annotation.CapacitorPlugin;
 
           @CapacitorPlugin(name = "TrailWidget")
-          public class TrailWidgetPlugin extends Plugin {
+          public class TrailWidgetPlugin extends Plugin implements SensorEventListener {
+
+              /* Kompass aus dem Rotationsvektor (Magnetometer + Gyro + Beschleunigung, von Android fusioniert).
+                 Liegt das Handy flach: Richtung der Oberkante. Steht es aufrecht: Blickrichtung der Rückkamera. */
+              private SensorManager sm;
+              private final float[] rm = new float[9];
+              private long lastSent = 0;
+              private double lastH = -1000;
+
+              @PluginMethod
+              public void startCompass(PluginCall call) {
+                  if (sm == null) sm = (SensorManager) getContext().getSystemService(android.content.Context.SENSOR_SERVICE);
+                  Sensor s = sm == null ? null : sm.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
+                  if (s == null) { call.reject("Kein Kompass-Sensor"); return; }
+                  sm.unregisterListener(this);
+                  sm.registerListener(this, s, SensorManager.SENSOR_DELAY_UI);
+                  call.resolve();
+              }
+
+              @PluginMethod
+              public void stopCompass(PluginCall call) {
+                  if (sm != null) sm.unregisterListener(this);
+                  call.resolve();
+              }
+
+              @Override
+              public void onSensorChanged(SensorEvent e) {
+                  SensorManager.getRotationMatrixFromVector(rm, e.values);
+                  double east, north;
+                  if (Math.abs(rm[8]) > 0.75) {          // flach: Oberkante des Bildschirms (Drehung beachten)
+                      int rot = Surface.ROTATION_0;
+                      try { rot = ((WindowManager) getContext().getSystemService(android.content.Context.WINDOW_SERVICE)).getDefaultDisplay().getRotation(); } catch (Exception ignore) {}
+                      if (rot == Surface.ROTATION_90) { east = rm[0]; north = rm[3]; }
+                      else if (rot == Surface.ROTATION_180) { east = -rm[1]; north = -rm[4]; }
+                      else if (rot == Surface.ROTATION_270) { east = -rm[0]; north = -rm[3]; }
+                      else { east = rm[1]; north = rm[4]; }
+                  } else {                                // aufrecht: Blick durch die Rückseite
+                      east = -rm[2]; north = -rm[5];
+                  }
+                  double h = (Math.toDegrees(Math.atan2(east, north)) + 360) % 360;
+                  long now = System.currentTimeMillis();
+                  double d = Math.abs(((h - lastH + 540) % 360) - 180);
+                  if (now - lastSent < 80 || d < 1) return;
+                  lastSent = now; lastH = h;
+                  JSObject r = new JSObject();
+                  r.put("h", h);
+                  r.put("acc", e.accuracy);
+                  notifyListeners("compass", r);
+              }
+
+              @Override
+              public void onAccuracyChanged(Sensor s, int a) {}
+
+              @Override
+              protected void handleOnDestroy() { if (sm != null) sm.unregisterListener(this); }
               static TrailWidgetPlugin instance;
               static String pending;
 
