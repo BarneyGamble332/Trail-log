@@ -1744,7 +1744,11 @@ function widgetPush(force,raw){
     const days={}, from=n.getTime()-14*864e5, key=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     // Widget zählt nur Radfahrten (MTB, Rennrad/Rad, E-Bike, E-MTB, Gravel), keine virtuellen
     const BIKE=new Set(['ride','mountainbikeride','ebikeride','emountainbikeride','gravelride']);
-    for(const x of S.acts){ if(x.d<from||!BIKE.has(typeKey(x.t))) continue; const k=key(new Date(x.d)), v=days[k]||(days[k]=[0,0,0]); v[0]++; v[1]=Math.round((v[1]+x.dist/1000)*100)/100; v[2]+=Math.round(x.gain||0); }
+    // [Touren, km, Hm, Art der längsten Fahrt: m=MTB/E-MTB, e=E-Bike, r=Rad/Rennrad/Gravel]
+    const kindOf=t=>t==='mountainbikeride'||t==='emountainbikeride'?'m':t==='ebikeride'?'e':'r', longest={};
+    for(const x of S.acts){ const t=typeKey(x.t); if(x.d<from||!BIKE.has(t)) continue; const k=key(new Date(x.d)), v=days[k]||(days[k]=[0,0,0,'r']);
+      v[0]++; v[1]=Math.round((v[1]+x.dist/1000)*100)/100; v[2]+=Math.round(x.gain||0);
+      if(!(longest[k]>=x.dist)){ longest[k]=x.dist; v[3]=kindOf(t); } }
     const pr=Promise.resolve(TW.update({running:!!REC.on,start:REC.t0||0,dist:fmt1.format((REC.dist||0)/1000),gain:fmt0.format(REC.gain||0),m:mon,mt,mk,mh,days:JSON.stringify(days)}));
     if(raw) return pr;
     pr.catch(e=>{ if(!widgetPush.err){ widgetPush.err=1; toast('Widget: '+String(e&&e.message||e).slice(0,100),6000); } });

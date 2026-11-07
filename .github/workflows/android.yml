@@ -345,8 +345,12 @@ jobs:
                       int n = d == null ? 0 : d.optInt(0, 0);
                       double k = d == null ? 0 : d.optDouble(1, 0);
                       tours += n; km += k; hm += d == null ? 0 : d.optDouble(2, 0);
-                      String icon = n > 0 ? "\uD83D\uDD25" : (i < today ? "\uD83D\uDCA9" : "");
-                      v.setTextViewText(DI[i], icon);
+                      // Bild je Tag: Rad nach Art der längsten Fahrt, Heuballen an vergangenen Tagen ohne Radtour
+                      String kind = d == null ? "" : d.optString(3, "r");
+                      int img = n > 0 ? ("m".equals(kind) ? R.drawable.wd_mtb : "e".equals(kind) ? R.drawable.wd_ebike : R.drawable.wd_road)
+                                      : (i < today ? R.drawable.wd_none : 0);
+                      if (img != 0) { v.setImageViewResource(DI[i], img); v.setViewVisibility(DI[i], View.VISIBLE); }
+                      else v.setViewVisibility(DI[i], View.INVISIBLE);
                       v.setTextViewText(DK[i], n > 0 ? km1(k) : "");
                       v.setTextColor(DL[i], i == today ? 0xFFF2C000 : 0xFF8E99A1);
                       v.setInt(DC[i], "setBackgroundResource", i == today ? R.drawable.widget_today : 0);
@@ -535,15 +539,14 @@ jobs:
                                   android:textColor="#8E99A1"
                                   android:textSize="10sp"
                                   android:textStyle="bold" />
-                              <TextView
+                              <ImageView
                                   android:id="@+id/w_di0"
-                                  android:layout_width="wrap_content"
+                                  android:layout_width="30dp"
                                   android:layout_height="20dp"
                                   android:layout_marginTop="2dp"
-                                  android:gravity="center"
-                                  android:includeFontPadding="false"
-                                  android:text=""
-                                  android:textSize="15sp" />
+                                  android:contentDescription="Tag"
+                                  android:scaleType="fitCenter"
+                                  android:visibility="invisible" />
                               <TextView
                                   android:id="@+id/w_dk0"
                                   android:layout_width="wrap_content"
@@ -572,15 +575,14 @@ jobs:
                                   android:textColor="#8E99A1"
                                   android:textSize="10sp"
                                   android:textStyle="bold" />
-                              <TextView
+                              <ImageView
                                   android:id="@+id/w_di1"
-                                  android:layout_width="wrap_content"
+                                  android:layout_width="30dp"
                                   android:layout_height="20dp"
                                   android:layout_marginTop="2dp"
-                                  android:gravity="center"
-                                  android:includeFontPadding="false"
-                                  android:text=""
-                                  android:textSize="15sp" />
+                                  android:contentDescription="Tag"
+                                  android:scaleType="fitCenter"
+                                  android:visibility="invisible" />
                               <TextView
                                   android:id="@+id/w_dk1"
                                   android:layout_width="wrap_content"
@@ -609,15 +611,14 @@ jobs:
                                   android:textColor="#8E99A1"
                                   android:textSize="10sp"
                                   android:textStyle="bold" />
-                              <TextView
+                              <ImageView
                                   android:id="@+id/w_di2"
-                                  android:layout_width="wrap_content"
+                                  android:layout_width="30dp"
                                   android:layout_height="20dp"
                                   android:layout_marginTop="2dp"
-                                  android:gravity="center"
-                                  android:includeFontPadding="false"
-                                  android:text=""
-                                  android:textSize="15sp" />
+                                  android:contentDescription="Tag"
+                                  android:scaleType="fitCenter"
+                                  android:visibility="invisible" />
                               <TextView
                                   android:id="@+id/w_dk2"
                                   android:layout_width="wrap_content"
@@ -646,15 +647,14 @@ jobs:
                                   android:textColor="#8E99A1"
                                   android:textSize="10sp"
                                   android:textStyle="bold" />
-                              <TextView
+                              <ImageView
                                   android:id="@+id/w_di3"
-                                  android:layout_width="wrap_content"
+                                  android:layout_width="30dp"
                                   android:layout_height="20dp"
                                   android:layout_marginTop="2dp"
-                                  android:gravity="center"
-                                  android:includeFontPadding="false"
-                                  android:text=""
-                                  android:textSize="15sp" />
+                                  android:contentDescription="Tag"
+                                  android:scaleType="fitCenter"
+                                  android:visibility="invisible" />
                               <TextView
                                   android:id="@+id/w_dk3"
                                   android:layout_width="wrap_content"
@@ -683,15 +683,14 @@ jobs:
                                   android:textColor="#8E99A1"
                                   android:textSize="10sp"
                                   android:textStyle="bold" />
-                              <TextView
+                              <ImageView
                                   android:id="@+id/w_di4"
-                                  android:layout_width="wrap_content"
+                                  android:layout_width="30dp"
                                   android:layout_height="20dp"
                                   android:layout_marginTop="2dp"
-                                  android:gravity="center"
-                                  android:includeFontPadding="false"
-                                  android:text=""
-                                  android:textSize="15sp" />
+                                  android:contentDescription="Tag"
+                                  android:scaleType="fitCenter"
+                                  android:visibility="invisible" />
                               <TextView
                                   android:id="@+id/w_dk4"
                                   android:layout_width="wrap_content"
@@ -720,15 +719,14 @@ jobs:
                                   android:textColor="#8E99A1"
                                   android:textSize="10sp"
                                   android:textStyle="bold" />
-                              <TextView
+                              <ImageView
                                   android:id="@+id/w_di5"
-                                  android:layout_width="wrap_content"
+                                  android:layout_width="30dp"
                                   android:layout_height="20dp"
                                   android:layout_marginTop="2dp"
-                                  android:gravity="center"
-                                  android:includeFontPadding="false"
-                                  android:text=""
-                                  android:textSize="15sp" />
+                                  android:contentDescription="Tag"
+                                  android:scaleType="fitCenter"
+                                  android:visibility="invisible" />
                               <TextView
                                   android:id="@+id/w_dk5"
                                   android:layout_width="wrap_content"
@@ -757,15 +755,14 @@ jobs:
                                   android:textColor="#8E99A1"
                                   android:textSize="10sp"
                                   android:textStyle="bold" />
-                              <TextView
+                              <ImageView
                                   android:id="@+id/w_di6"
-                                  android:layout_width="wrap_content"
+                                  android:layout_width="30dp"
                                   android:layout_height="20dp"
                                   android:layout_marginTop="2dp"
-                                  android:gravity="center"
-                                  android:includeFontPadding="false"
-                                  android:text=""
-                                  android:textSize="15sp" />
+                                  android:contentDescription="Tag"
+                                  android:scaleType="fitCenter"
+                                  android:visibility="invisible" />
                               <TextView
                                   android:id="@+id/w_dk6"
                                   android:layout_width="wrap_content"
@@ -926,6 +923,7 @@ jobs:
           XML
           mkdir -p $RES/drawable-nodpi $RES/drawable-xxhdpi
           cp icon/widget-bar.png $RES/drawable-nodpi/widget_bar.png
+          for f in wd_mtb wd_road wd_ebike wd_none; do cp icon/$f.png $RES/drawable-nodpi/$f.png; done
           cp icon/widget-bar-stop.png $RES/drawable-nodpi/widget_bar_stop.png
           cat > $RES/drawable/widget_bike.xml <<'XML'
           <?xml version="1.0" encoding="utf-8"?>
