@@ -458,22 +458,24 @@ jobs:
                                       if (mod > after) {
                                           Uri u = ContentUris.withAppendedId(base, id);
                                           double lat = Double.NaN, lon = Double.NaN;
-                                          float[] ll = new float[2];
-                                          boolean ok = false;
-                                          if (useLoc) {
-                                              try (ParcelFileDescriptor pf = cr.openFileDescriptor(MediaStore.setRequireOriginal(u), "r")) {
-                                                  if (pf != null && new ExifInterface(pf.getFileDescriptor()).getLatLong(ll)) ok = true;
-                                              } catch (Exception ignore) {}
-                                          }
-                                          if (!ok && !useLoc) {
+                                          long t = taken > 0 ? taken : added * 1000L;
+                                          ExifInterface ex = null;
+                                          try (ParcelFileDescriptor pf = cr.openFileDescriptor(useLoc ? MediaStore.setRequireOriginal(u) : u, "r")) {
+                                              if (pf != null) ex = new ExifInterface(pf.getFileDescriptor());
+                                          } catch (Exception e1) {
                                               try (ParcelFileDescriptor pf = cr.openFileDescriptor(u, "r")) {
-                                                  if (pf != null && new ExifInterface(pf.getFileDescriptor()).getLatLong(ll)) ok = true;
+                                                  if (pf != null) ex = new ExifInterface(pf.getFileDescriptor());
                                               } catch (Exception ignore) {}
                                           }
-                                          if (ok && (ll[0] != 0 || ll[1] != 0)) { lat = ll[0]; lon = ll[1]; }
+                                          if (ex != null) {
+                                              float[] ll = new float[2];
+                                              if (ex.getLatLong(ll) && (ll[0] != 0 || ll[1] != 0)) { lat = ll[0]; lon = ll[1]; }
+                                              long et = exifTime(ex);
+                                              if (et > 0) t = et;
+                                          }
                                           JSObject o = new JSObject();
                                           o.put("id", id);
-                                          o.put("t", taken > 0 ? taken : added * 1000L);
+                                          o.put("t", t);
                                           if (!Double.isNaN(lat)) { o.put("lat", lat); o.put("lon", lon); }
                                           items.put(o);
                                       }
@@ -494,6 +496,24 @@ jobs:
                           call.reject("Fotos konnten nicht gelesen werden: " + e.getMessage());
                       }
                   }).start();
+              }
+
+              /* Aufnahmezeit aus EXIF: mit Zeitzonen-Angabe exakt, sonst als Ortszeit des Handys (mit Sommer-/Winterzeit).
+                 Die Zeit von Android (DATE_TAKEN) ist bei Fotos ohne Zeitzone oft um 1-2 Stunden verschoben. */
+              private static long exifTime(ExifInterface ex) {
+                  String d = ex.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL);
+                  if (d == null || d.trim().length() < 19) d = ex.getAttribute(ExifInterface.TAG_DATETIME);
+                  if (d == null || d.trim().length() < 19 || d.startsWith("0000")) return -1;
+                  d = d.trim().substring(0, 19);
+                  String off = ex.getAttribute("OffsetTimeOriginal");
+                  if (off == null) off = ex.getAttribute("OffsetTime");
+                  try {
+                      java.text.SimpleDateFormat f = new java.text.SimpleDateFormat("yyyy:MM:dd HH:mm:ss", java.util.Locale.US);
+                      if (off != null && off.trim().matches("[+-]\\d{2}:\\d{2}")) f.setTimeZone(java.util.TimeZone.getTimeZone("GMT" + off.trim()));
+                      else f.setTimeZone(java.util.TimeZone.getDefault());
+                      java.util.Date r = f.parse(d);
+                      return r == null ? -1 : r.getTime();
+                  } catch (Exception e) { return -1; }
               }
 
               /* Vorschaubild als JPEG-Daten-URL */

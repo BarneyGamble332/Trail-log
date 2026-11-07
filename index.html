@@ -293,7 +293,7 @@ canvas.prof{width:100%;height:120px;display:block}
       <button class="tab" role="tab" data-tab="rec" id="tab-rec">Aufnahme</button>
       <button class="tab" role="tab" data-tab="tours" id="tab-tours">Touren</button>
       <button class="tab" role="tab" data-tab="stats" id="tab-stats">Statistik</button>
-      <button class="tab" role="tab" data-tab="filter" id="tab-filter">Filter</button>
+      <button class="tab" role="tab" data-tab="filter" id="tab-filter">Karte</button>
     </nav>
   </div>
   <div class="panes">
@@ -425,7 +425,7 @@ canvas.prof{width:100%;height:120px;display:block}
       <div class="stack">
         <h3 style="margin:0">Offline-Karten (MTB)</h3>
         <div id="kartenList" class="stack"><p class="note">Wird geladen …</p></div>
-        <p class="note">Die MTB-Karte entsteht aus OpenStreetMap und Höhendaten und wird jeden Monat neu gebaut. Nach dem Download geht sie ohne Netz. Anzeigen: Filter → Hintergrund → MTB. Tippst du auf einen Weg, siehst du S-Skala, Untergrund und Wegzustand.</p>
+        <p class="note">Die MTB-Karte entsteht aus OpenStreetMap und Höhendaten und wird jeden Monat neu gebaut. Nach dem Download geht sie ohne Netz. Anzeigen: Karte → Hintergrund → MTB. Tippst du auf einen Weg, siehst du S-Skala, Untergrund und Wegzustand.</p>
       </div>
       <div class="stack">
         <h3 style="margin:0">Backup</h3>
@@ -2298,9 +2298,9 @@ const phPlug=()=>NATIVE?nativePlugin('TrailPhotos'):null;
 
 async function phLoadStore(meta){
   const m=meta&&meta.find(x=>x.k==='photos');
-  if(m&&m.mode===PH.mode&&Array.isArray(m.items)){ PH.items=m.items; PH.after=+m.after||0; }
+  if(m&&m.v===2&&m.mode===PH.mode&&Array.isArray(m.items)){ PH.items=m.items; PH.after=+m.after||0; }
 }
-function phSave(){ return idb.put('meta',[{k:'photos',mode:PH.mode,after:PH.after,items:PH.items}]).catch(()=>{}); }
+function phSave(){ return idb.put('meta',[{k:'photos',v:2,mode:PH.mode,after:PH.after,items:PH.items}]).catch(()=>{}); }
 
 /* Ort auf dem Track zum Zeitpunkt t (ms) */
 function posAt(a,t){
