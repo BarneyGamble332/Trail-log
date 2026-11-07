@@ -343,7 +343,7 @@ canvas.prof{width:100%;height:120px;display:block}
       </div>
       <div><h3>Hintergrund</h3>
         <div class="seg" id="baseSeg">
-          <button data-base="topo" id="base-topo">Topo</button><button data-base="mtb" id="base-mtb">MTB</button><button data-base="plain" id="base-plain">Einfarbig</button>
+          <button data-base="topo" id="base-topo">Topo</button><button data-base="mtb" id="base-mtb">Offline</button><button data-base="plain" id="base-plain">Einfarbig</button>
         </div>
         <div class="bgrow" id="bgRow" hidden>
           <div class="swatches" id="bgSwatches">
@@ -404,7 +404,7 @@ canvas.prof{width:100%;height:120px;display:block}
       <div class="stack">
         <button class="btn primary" id="btnZip">Strava-Export (ZIP) laden</button>
         <button class="btn" id="btnFiles">Einzelne GPX-/FIT-/TCX-Dateien</button>
-        <p class="note">Bereits importierte Touren werden übersprungen, du kannst also jederzeit einen neueren Export nachladen. Touren aus älteren Versionen bekommen dabei Höhenprofil und Bewegungszeit nachgetragen. Alles bleibt auf diesem Gerät.</p>
+        <p class="note">Bereits importierte Touren werden übersprungen, du kannst also jederzeit einen neueren Export nachladen. Touren aus älteren Versionen bekommen dabei Höhenprofil, Bewegungszeit und die Zeit je Punkt nachgetragen, falsche Zeitzonen werden korrigiert. Alles bleibt auf diesem Gerät.</p>
       </div>
       <div>
         <h3>So bekommst du den Strava-Export</h3>
@@ -425,7 +425,7 @@ canvas.prof{width:100%;height:120px;display:block}
       <div class="stack">
         <h3 style="margin:0">Offline-Karten (MTB)</h3>
         <div id="kartenList" class="stack"><p class="note">Wird geladen …</p></div>
-        <p class="note">Die MTB-Karte entsteht aus OpenStreetMap und Höhendaten und wird jeden Monat neu gebaut. Nach dem Download geht sie ohne Netz. Anzeigen: Karte → Hintergrund → MTB. Tippst du auf einen Weg, siehst du S-Skala, Untergrund und Wegzustand.</p>
+        <p class="note">Die MTB-Karte entsteht aus OpenStreetMap und Höhendaten und wird jeden Monat neu gebaut. Nach dem Download geht sie ohne Netz. Anzeigen: Karte → Hintergrund → Offline. Tippst du auf einen Weg, siehst du S-Skala, Untergrund und Wegzustand.</p>
       </div>
       <div class="stack">
         <h3 style="margin:0">Backup</h3>
@@ -616,7 +616,8 @@ function parseDateLoose(s){
   if(!s) return NaN;
   const g=/(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{4})(?:,?\s*(\d{1,2}):(\d{2})(?::(\d{2}))?)?/.exec(s);
   if(g) return Date.UTC(+g[3],+g[2]-1,+g[1],+(g[4]||0),+(g[5]||0),+(g[6]||0));
-  const v=Date.parse(s.replace(/,(\s*\d{1,2}:)/,'$1')); return isNaN(v)?Date.parse(s):v;
+  const x=s.replace(/,(\s*\d{1,2}:)/,'$1'), u=Date.parse(x+' UTC'); if(!isNaN(u)) return u; // Strava-Liste ist in UTC
+  const v=Date.parse(x); return isNaN(v)?Date.parse(s):v;
 }
 
 function parseActivitiesCsv(txt){
@@ -645,8 +646,19 @@ function haversine(a1,o1,a2,o2){
   return 12742017.6*Math.asin(Math.min(1,Math.sqrt(s)));
 }
 
+/* Manche Geräte schreiben die Ortszeit in die Datei, kennzeichnen sie aber als UTC. Dann ist die Tour
+   im Winter 1 h und im Sommer 2 h zu spät. Erkennbar am Vergleich mit der Startzeit aus der Strava-Liste (UTC):
+   liegt die Datei genau um die damalige Zeitzonen-Differenz daneben, werden alle Zeiten korrigiert. */
+function fixTrackZone(trk,meta){
+  if(!meta||!isFinite(meta.date)||!trk.t) return;
+  const t0=trk.t.find(v=>isFinite(v)); if(!isFinite(t0)) return;
+  const off=-new Date(meta.date).getTimezoneOffset()*60e3, diff=meta.date-t0;
+  if(!off||Math.abs(diff+off)>5*60e3) return;
+  trk.t=trk.t.map(v=>isFinite(v)?v-off:v); trk.zoneFixed=true;
+}
 function buildAct(id,trk,meta){
   const n=trk.lat.length; if(n<2) return null;
+  fixTrackZone(trk,meta);
   let dist=0, gain=0, ref=null, mv=0, s=90,w=180,nn=-90,e=-180;
   const keep=[trk.lat[0],trk.lon[0]], keepE=[isFinite(trk.ele[0])?trk.ele[0]:NaN], keepT=[trk.t?trk.t[0]:NaN]; let kl=trk.lat[0], ko=trk.lon[0];
   let t0=NaN,t1=NaN;
@@ -664,7 +676,7 @@ function buildAct(id,trk,meta){
   const date=isFinite(t0)?t0:(isFinite(m.date)?m.date:Date.now());
   const dur=isFinite(t1-t0)?(t1-t0)/1000:0;
   return {id:String(id), n:(m.name||trk.name||'Tour').trim(), t:typeKey(m.type||trk.type), d:date,
-    dist, gain:isFinite(m.gain)?m.gain:gain, dur, mv:mv>0?mv:dur, v:2,
+    dist, gain:isFinite(m.gain)?m.gain:gain, dur, mv:mv>0?mv:dur, v:3,
     bb:[s,w,nn,e], c:new Float32Array(keep), e:new Float32Array(keepE), ts:actTimes(keepT,date)};
 }
 /* Zeit je Punkt als Sekunden ab Start (Float64 wegen Bruchteilen), nur wenn alle Punkte eine Zeit haben */
@@ -1139,13 +1151,13 @@ async function importEntries(items,label){
     if(busy.cancel) break;
     const it=items[i];
     if(i%5===0) busy.set(i/items.length,`${i} von ${items.length} Dateien · ${added+upd} neu oder ergänzt`);
-    if(it.id){ const o=known.get(it.id); if(o&&o.v>=2){ skipped++; continue; } }
+    if(it.id){ const o=known.get(it.id); if(o&&o.v>=3&&o.ts){ skipped++; continue; } }
     try{
       let u8=await it.read(); let name=it.name;
       if(/\.gz$/i.test(name)){ u8=await gunzip(u8); name=name.replace(/\.gz$/i,''); }
       const trk=parseTrackBytes(name,u8);
       const id=it.id||(name.replace(/\.(gpx|fit|tcx)$/i,'')+'_'+(isFinite(trk.t[0])?trk.t[0]:trk.lat.length));
-      const o=known.get(id); if(o&&o.v>=2){ skipped++; continue; }
+      const o=known.get(id); if(o&&o.v>=3&&o.ts){ skipped++; continue; }
       const act=buildAct(id,trk,it.meta);
       if(act){ if(o){ S.acts[S.acts.indexOf(o)]=act; upd++; } else { S.acts.push(act); added++; } known.set(id,act); pending.push(act); } else skipped++;
     }catch(e){ failed++; }
@@ -1784,7 +1796,7 @@ function actToJSON(a){ return {id:a.id,n:a.n,t:a.t,d:a.d,dist:a.dist,gain:a.gain
   c:Array.from(a.c,v=>+v.toFixed(6)), e:a.e?Array.from(a.e,v=>isFinite(v)?Math.round(v*10)/10:null):null, ts:a.ts?Array.from(a.ts):undefined}; }
 function actFromJSON(o){
   if(!o||!Array.isArray(o.c)||o.c.length<4||!o.id) return null;
-  return {id:String(o.id),n:o.n||'Tour',t:o.t||'other',d:+o.d,dist:+o.dist||0,gain:+o.gain||0,dur:+o.dur||0,mv:+o.mv||+o.dur||0,v:o.e?2:(o.v||1),
+  return {id:String(o.id),n:o.n||'Tour',t:o.t||'other',d:+o.d,dist:+o.dist||0,gain:+o.gain||0,dur:+o.dur||0,mv:+o.mv||+o.dur||0,v:o.v||(o.e?2:1),
     bb:o.bb,c:Float32Array.from(o.c),e:o.e?Float32Array.from(o.e,v=>v==null?NaN:v):undefined,
     ts:Array.isArray(o.ts)&&o.ts.length*2===o.c.length?Float64Array.from(o.ts):undefined};
 }
@@ -2312,8 +2324,7 @@ function posAt(a,t){
     const f=(rel-ts[lo])/((ts[hi]-ts[lo])||1);
     return [c[2*lo]+(c[2*hi]-c[2*lo])*f, c[2*lo+1]+(c[2*hi+1]-c[2*lo+1])*f];
   }
-  const f=Math.max(0,Math.min(1,rel/((a.dur||1)))), i=Math.round(f*(n-1));
-  return [c[2*i],c[2*i+1]];
+  return null; // ohne Zeit je Punkt wäre der Ort nur geraten (Pausen verschieben alles)
 }
 const actEnd=a=>a.d+1000*((a.ts&&a.ts.length?a.ts[a.ts.length-1]:0)||a.dur||0);
 function phMatch(){
@@ -2488,9 +2499,10 @@ function phNote(){
   const el=$('#phNote'); if(!el) return; $('#phOpts').hidden=!PH.on;
   segSet('phMode',PH.mode);
   if(!NATIVE){ el.textContent='Fotos aus der Galerie gibt es nur in der Android-App.'; return; }
-  const est=PH.pts.filter(p=>p.est).length;
+  const est=PH.pts.filter(p=>p.est).length, noTs=S.acts.filter(a=>!/^rec_/.test(a.id)&&(!(a.ts&&a.ts.length)||(a.v||1)<3)).length;
   el.textContent=(PH.lastScan||PH.items.length?`${fmt0.format(PH.pts.length)} Fotos auf der Karte${est?`, davon ${fmt0.format(est)} über die Aufnahmezeit`:''}. `:'')+
     'Fotos mit Standort erscheinen am Aufnahmeort. Fotos ohne Standort werden über die Aufnahmezeit einer Tour zugeordnet, sonst weggelassen.'+
+    (noTs?` ${fmt0.format(noTs)} Touren sind noch nicht auf dem neuesten Stand (Zeit je Punkt, Zeitzone). Für eine genaue Zuordnung den Strava-Export unter Einstellungen einmal erneut laden.`:'')+
     (PH.loc?'':' Standort in Fotos ist gerade nicht erlaubt.');
 }
 function phInit(meta){
