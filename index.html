@@ -1839,7 +1839,11 @@ function widgetPush(force,raw){
     for(const x of S.acts){ const t=typeKey(x.t); if(x.d<from||!BIKE.has(t)) continue; const k=key(new Date(x.d)), v=days[k]||(days[k]=[0,0,0,'r']);
       v[0]++; v[1]=Math.round((v[1]+x.dist/1000)*100)/100; v[2]+=Math.round(x.gain||0);
       if(!(longest[k]>=x.dist)){ longest[k]=x.dist; v[3]=kindOf(t); } }
-    const pr=Promise.resolve(TW.update({running:!!REC.on,start:REC.t0||0,dist:fmt1.format((REC.dist||0)/1000),gain:fmt0.format(REC.gain||0),m:mon,mt,mk,mh,days:JSON.stringify(days)}));
+    // Wander-Widget: Wandern, Spaziergang, Schneeschuh
+    const HIKE=new Set(['hike','walk','snowshoe']), hdays={};
+    for(const x of S.acts){ const t=typeKey(x.t); if(x.d<from||!HIKE.has(t)) continue; const k=key(new Date(x.d)), v=hdays[k]||(hdays[k]=[0,0,0]);
+      v[0]++; v[1]=Math.round((v[1]+x.dist/1000)*100)/100; v[2]+=Math.round(x.gain||0); }
+    const pr=Promise.resolve(TW.update({running:!!REC.on,start:REC.t0||0,dist:fmt1.format((REC.dist||0)/1000),gain:fmt0.format(REC.gain||0),m:mon,mt,mk,mh,days:JSON.stringify(days),hdays:JSON.stringify(hdays)}));
     if(raw) return pr;
     pr.catch(e=>{ if(!widgetPush.err){ widgetPush.err=1; toast('Widget: '+String(e&&e.message||e).slice(0,100),6000); } });
   }catch(e){}
@@ -1848,7 +1852,9 @@ if(TW){
   TW.addListener('widgetAction',ev=>{
     const a=ev&&ev.action;
     setTimeout(()=>{
-      if(a==='start'){ openTab('rec'); if(!REC.on) recStart(); }
+      if(a==='start'||a==='starthike'){ openTab('rec'); if(!REC.on){ const sel=$('#rcType'), bike=['mountainbikeride','emountainbikeride','ride'].includes(sel.value);
+        // Wander-Widget startet Wandern; Rad-Widget behält die zuletzt gewählte Radart
+        if(a==='starthike') sel.value='hike'; else if(!bike) sel.value='mountainbikeride'; recStart(); } }
       else if(a==='stop'){ if(REC.on) stopAsk(); }
     },700);
   });

@@ -234,7 +234,7 @@ jobs:
                       call.getString("dist", "0,0"), call.getString("gain", "0"),
                       call.getString("m", ""), call.getString("mt", "–"),
                       call.getString("mk", "–"), call.getString("mh", "–"),
-                      call.getString("days", "{}"));
+                      call.getString("days", "{}"), call.getString("hdays", "{}"));
                   call.resolve();
               }
 
@@ -345,7 +345,7 @@ jobs:
               static final String PREF = "tlwidget";
 
               static void save(Context c, boolean running, long start, String dist, String gain,
-                               String month, String tours, String km, String hm, String days) {
+                               String month, String tours, String km, String hm, String days, String hdays) {
                   c.getSharedPreferences(PREF, Context.MODE_PRIVATE).edit()
                       .putBoolean("run", running)
                       .putLong("start", start)
@@ -356,6 +356,7 @@ jobs:
                       .putString("mk", km)
                       .putString("mh", hm)
                       .putString("days", days)
+                      .putString("hdays", hdays)
                       .putLong("ts", System.currentTimeMillis())
                       .apply();
                   refresh(c);
@@ -363,13 +364,13 @@ jobs:
 
               static void refresh(Context c) {
                   AppWidgetManager m = AppWidgetManager.getInstance(c);
-                  int[] ids = m.getAppWidgetIds(new ComponentName(c, TrailWidgetProvider.class));
-                  for (int id : ids) m.updateAppWidget(id, build(c));
+                  for (int id : m.getAppWidgetIds(new ComponentName(c, TrailWidgetProvider.class))) m.updateAppWidget(id, build(c, false));
+                  for (int id : m.getAppWidgetIds(new ComponentName(c, TrailWidgetHikeProvider.class))) m.updateAppWidget(id, build(c, true));
               }
 
               @Override
               public void onUpdate(Context c, AppWidgetManager m, int[] ids) {
-                  for (int id : ids) m.updateAppWidget(id, build(c));
+                  for (int id : ids) m.updateAppWidget(id, build(c, false));
               }
 
               static PendingIntent act(Context c, String action, int code) {
@@ -392,9 +393,9 @@ jobs:
 
               /* Aktuelle Woche (Mo-So) aus Tageswerten {"2026-11-06":[Touren,km,Hm]}.
                  Wird bei jedem Neuzeichnen mit dem heutigen Datum berechnet, stimmt also auch ohne App-Start. */
-              static void week(RemoteViews v, SharedPreferences p) {
+              static void week(RemoteViews v, SharedPreferences p, boolean hike) {
                   JSONObject days;
-                  try { days = new JSONObject(p.getString("days", "{}")); } catch (Exception e) { days = new JSONObject(); }
+                  try { days = new JSONObject(p.getString(hike ? "hdays" : "days", "{}")); } catch (Exception e) { days = new JSONObject(); }
                   Calendar cal = Calendar.getInstance();
                   int today = (cal.get(Calendar.DAY_OF_WEEK) + 5) % 7;
                   cal.add(Calendar.DAY_OF_MONTH, -today);
@@ -407,7 +408,7 @@ jobs:
                       tours += n; km += k; hm += d == null ? 0 : d.optDouble(2, 0);
                       // Bild je Tag: Rad nach Art der längsten Fahrt, Heuballen an vergangenen Tagen ohne Radtour
                       String kind = d == null ? "" : d.optString(3, "r");
-                      int img = n > 0 ? ("m".equals(kind) ? R.drawable.wd_mtb : "e".equals(kind) ? R.drawable.wd_ebike : R.drawable.wd_road)
+                      int img = n > 0 ? (hike ? R.drawable.wd_hike : "m".equals(kind) ? R.drawable.wd_mtb : "e".equals(kind) ? R.drawable.wd_ebike : R.drawable.wd_road)
                                       : (i < today ? R.drawable.wd_none : 0);
                       if (img != 0) { v.setImageViewResource(DI[i], img); v.setViewVisibility(DI[i], View.VISIBLE); }
                       else v.setViewVisibility(DI[i], View.INVISIBLE);
@@ -420,7 +421,7 @@ jobs:
                   v.setTextViewText(R.id.w_n3, String.format(Locale.GERMANY, "%,.0f", hm));
               }
 
-              static RemoteViews build(Context c) {
+              static RemoteViews build(Context c, boolean hike) {
                   SharedPreferences p = c.getSharedPreferences(PREF, Context.MODE_PRIVATE);
                   long now = System.currentTimeMillis();
                   // Laeuft die App nicht mehr (Absturz), zeigt das Widget nach 10 Minuten wieder "bereit".
@@ -447,10 +448,27 @@ jobs:
                       v.setViewVisibility(R.id.w_stop, View.GONE);
                       v.setViewVisibility(R.id.w_start, View.VISIBLE);
                       v.setViewVisibility(R.id.w_head, View.GONE);
-                      week(v, p);
-                      v.setOnClickPendingIntent(R.id.w_start, act(c, "start", 2));
+                      if (hike) { v.setImageViewResource(R.id.w_ico, R.drawable.widget_hike_ic); v.setTextViewText(R.id.w_lab, "WANDERN"); }
+                      week(v, p, hike);
+                      v.setOnClickPendingIntent(R.id.w_start, hike ? act(c, "starthike", 4) : act(c, "start", 2));
                   }
                   return v;
+              }
+          }
+          JAVA
+
+          cat > $PKG/TrailWidgetHikeProvider.java <<'JAVA'
+          package de.bernhard.traillog;
+
+          import android.appwidget.AppWidgetManager;
+          import android.appwidget.AppWidgetProvider;
+          import android.content.Context;
+
+          /* Zweites Widget: Wandern (Wandern, Spaziergang, Schneeschuh), gleicher Aufbau wie das Rad-Widget */
+          public class TrailWidgetHikeProvider extends AppWidgetProvider {
+              @Override
+              public void onUpdate(Context c, AppWidgetManager m, int[] ids) {
+                  for (int id : ids) m.updateAppWidget(id, TrailWidgetProvider.build(c, true));
               }
           }
           JAVA
@@ -504,12 +522,14 @@ jobs:
                               android:gravity="center_horizontal"
                               android:orientation="vertical">
                               <ImageView
+                                  android:id="@+id/w_ico"
                                   android:layout_width="44dp"
                                   android:layout_height="26dp"
                                   android:contentDescription="Rad"
                                   android:scaleType="fitCenter"
                                   android:src="@drawable/widget_bike" />
                               <TextView
+                                  android:id="@+id/w_lab"
                                   android:layout_width="wrap_content"
                                   android:layout_height="wrap_content"
                                   android:layout_marginTop="3dp"
@@ -983,7 +1003,8 @@ jobs:
           XML
           mkdir -p $RES/drawable-nodpi $RES/drawable-xxhdpi
           cp icon/widget-bar.png $RES/drawable-nodpi/widget_bar.png
-          for f in wd_mtb wd_road wd_ebike wd_none; do cp icon/$f.png $RES/drawable-nodpi/$f.png; done
+          for f in wd_mtb wd_road wd_ebike wd_none wd_hike; do cp icon/$f.png $RES/drawable-nodpi/$f.png; done
+          cp icon/widget-hike-ic.png $RES/drawable-nodpi/widget_hike_ic.png
           cp icon/widget-bar-stop.png $RES/drawable-nodpi/widget_bar_stop.png
           cat > $RES/drawable/widget_bike.xml <<'XML'
           <?xml version="1.0" encoding="utf-8"?>
@@ -1045,15 +1066,22 @@ jobs:
               android:widgetCategory="home_screen"
               android:description="@string/widget_desc" />
           XML
+          sed -e 's#@string/widget_desc#@string/widget_hike_desc#' $RES/xml/widget_tl_info.xml > $RES/xml/widget_hike_info.xml
 
           python3 - <<'PY'
           m='android/app/src/main/AndroidManifest.xml'
           s=open(m).read()
-          rec='''        <receiver android:name=".TrailWidgetProvider" android:exported="false">
+          rec='''        <receiver android:name=".TrailWidgetProvider" android:exported="false" android:label="@string/widget_rad">
                       <intent-filter>
                           <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
                       </intent-filter>
                       <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_tl_info" />
+                  </receiver>
+                  <receiver android:name=".TrailWidgetHikeProvider" android:exported="false" android:label="@string/widget_hike">
+                      <intent-filter>
+                          <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                      </intent-filter>
+                      <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_hike_info" />
                   </receiver>
               </application>'''
           assert '</application>' in s
@@ -1063,7 +1091,7 @@ jobs:
           open(m,'w').write(s)
           st='android/app/src/main/res/values/strings.xml'
           t=open(st).read()
-          open(st,'w').write(t.replace('</resources>','    <string name="widget_desc">Aufnahme starten und Live-Daten anzeigen</string>\n</resources>',1))
+          open(st,'w').write(t.replace('</resources>','    <string name="widget_desc">Rad: Woche und Aufnahme starten</string>\n    <string name="widget_hike_desc">Wandern: Woche und Aufnahme starten</string>\n    <string name="widget_rad">Trail Log Rad</string>\n    <string name="widget_hike">Trail Log Wandern</string>\n</resources>',1))
           PY
 
       - name: Signaturschluessel einsetzen (gleich bei jedem Build, damit Updates klappen)
