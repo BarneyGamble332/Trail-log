@@ -1009,7 +1009,7 @@ function applyFilter(){
   visible=[]; visibleIdx=new Set();
   S.acts.forEach((a,i)=>{ if(S.types.size&&!S.types.has(a.t)) return; if(S.years.size&&!S.years.has(yearOf(a))) return; visible.push(a); visibleIdx.add(i); });
   ls.set('types',[...S.types]); ls.set('years',[...S.years]);
-  heat.redraw(); renderPois(); renderStats(); renderSummary(); renderTours(); widgetPush(true);
+  heat.redraw(); renderPois(); renderPhotos(); phNote(); renderStats(); renderSummary(); renderTours(); widgetPush(true);
 }
 const chip=(v,l,n,on)=>`<button class="chip${on?' on':''}" data-v="${esc(v)}" aria-pressed="${on}">${esc(l)}<span>${fmt0.format(n)}</span></button>`;
 function renderChips(){
@@ -1842,7 +1842,7 @@ function applyTheme(){
 $('#themeSeg').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return; ls.set('theme',b.dataset.v); applyTheme(); renderTours(); if(TOUR.sel){ const a=byId.get(TOUR.sel); if(a) drawProfile($('#prof'),a); } });
 
 /* ---------- Alle Touren auf der Karte zeigen / ausblenden ---------- */
-function setShowHeat(on){ ls.set('showHeat',on); $('#tShowHeat').checked=on; if(on){ if(!map.hasLayer(heat)) heat.addTo(map); } else map.removeLayer(heat); }
+function setShowHeat(on){ ls.set('showHeat',on); $('#tShowHeat').checked=on; if(on){ if(!map.hasLayer(heat)) heat.addTo(map); } else map.removeLayer(heat); renderPhotos(); phNote(); }
 $('#tShowHeat').onchange=e=>setShowHeat(e.target.checked);
 setShowHeat(ls.get('showHeat',true)!==false);
 
@@ -2371,10 +2371,20 @@ function phFill(root){
   });
 }
 
+/* Welche Fotos gezeigt werden, richtet sich nach den Touren auf der Karte:
+   Fotos einer Tour nur, wenn die Tour zum Filter (Sportart, Jahr) passt; Fotos ohne Tour nur, wenn das Jahr passt
+   und keine Sportart gewählt ist. Ist „Alle Touren auf der Karte zeigen“ aus, nur die Fotos der geöffneten Tour. */
+function phVisible(){
+  const sel=typeof TOUR!=='undefined'&&TOUR.sel?(PH.byAct.get(TOUR.sel)||[]):[];
+  if(!PH.on||ls.get('showHeat',true)===false) return sel;
+  const vis=new Set(visible.map(a=>a.id));
+  const out=PH.pts.filter(p=>p.act?vis.has(p.act):(!S.types.size&&(!S.years.size||S.years.has(new Date(p.t).getFullYear()))));
+  if(sel.length&&!vis.has(TOUR.sel)) out.push(...sel);
+  return out;
+}
 function renderPhotos(){
   if(!phLayer) return; phLayer.clearLayers();
-  const sel=typeof TOUR!=='undefined'&&TOUR.sel?PH.byAct.get(TOUR.sel):null;
-  const list=PH.on?PH.pts:(sel||[]); if(!list.length) return;
+  const list=phVisible(); if(!list.length) return;
   // nach Abstand gruppieren: alles, was näher als ein Vorschaubild beisammen liegt, wird ein Stapel
   const z=map.getZoom(), b=map.getBounds().pad(0.15), R=48, cells=new Map(), groups=[];
   const vis=list.filter(p=>b.contains([p.lat,p.lon])).sort((x,y)=>y.t-x.t);
@@ -2500,7 +2510,8 @@ function phNote(){
   segSet('phMode',PH.mode);
   if(!NATIVE){ el.textContent='Fotos aus der Galerie gibt es nur in der Android-App.'; return; }
   const est=PH.pts.filter(p=>p.est).length, noTs=S.acts.filter(a=>!/^rec_/.test(a.id)&&(!(a.ts&&a.ts.length)||(a.v||1)<3)).length;
-  el.textContent=(PH.lastScan||PH.items.length?`${fmt0.format(PH.pts.length)} Fotos auf der Karte${est?`, davon ${fmt0.format(est)} über die Aufnahmezeit`:''}. `:'')+
+  const shown=PH.on?phVisible().length:0;
+  el.textContent=(PH.lastScan||PH.items.length?`${fmt0.format(shown)} Fotos auf der Karte${shown<PH.pts.length?` (von ${fmt0.format(PH.pts.length)}, Filter aktiv)`:''}${est?`, ${fmt0.format(est)} davon über die Aufnahmezeit`:''}. `:'')+
     'Fotos mit Standort erscheinen am Aufnahmeort. Fotos ohne Standort werden über die Aufnahmezeit einer Tour zugeordnet, sonst weggelassen.'+
     (noTs?` ${fmt0.format(noTs)} Touren sind noch nicht auf dem neuesten Stand (Zeit je Punkt, Zeitzone). Für eine genaue Zuordnung den Strava-Export unter Einstellungen einmal erneut laden.`:'')+
     (PH.loc?'':' Standort in Fotos ist gerade nicht erlaubt.');
