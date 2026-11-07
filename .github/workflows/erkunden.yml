@@ -8,17 +8,18 @@ jobs:
       - name: ATKIS WFS
         run: |
           U='https://geoservices.bayern.de/wfs/v1/ogc_atkis_basisdlm.cgi'
-          curl -sS "$U?service=WFS&version=2.0.0&request=GetCapabilities" -o cap.xml
-          python3 - <<'PY'
-          import re
-          s=open('cap.xml').read()
-          i=s.find('FeatureType>'); print(s[i-200:i+1500])
-          names=re.findall(r'<(?:\w+:)?Name>([^<]+)</(?:\w+:)?Name>',s)
-          print('NAMES',len(names)); print(' '.join(names))
-          open('names.txt','w').write('\n'.join(n for n in names if re.search(r'(?i)weg|strass|pfad|fahr',n)))
-          PY
-          for t in $(cat names.txt); do
-            echo "==== $t"
-            curl -sS --max-time 60 "$U?service=WFS&version=2.0.0&request=DescribeFeatureType&typeNames=$t" | grep -o 'name="[^"]*"' | tr '\n' ' ' | head -c 2500; echo
-            curl -sS --max-time 90 "$U?service=WFS&version=2.0.0&request=GetFeature&typeNames=$t&count=3&srsName=urn:ogc:def:crs:EPSG::4326&bbox=47.47,11.05,47.51,11.12,urn:ogc:def:crs:EPSG::4326" | head -c 3500; echo
+          NS='namespaces=xmlns(adv,http://www.adv-online.de/namespaces/adv/gid/7.1)'
+          B='bbox=47.46,11.03,47.52,11.13,urn:ogc:def:crs:EPSG::4326'
+          for t in adv:AX_Fahrwegachse adv:AX_WegPfadSteig; do
+            echo "==== $t hits"
+            curl -sS --max-time 90 "$U?service=WFS&version=2.0.0&request=GetFeature&typeNames=$t&resultType=hits&$NS&$B" | head -c 600; echo
+            echo "==== $t sample"
+            curl -sS --max-time 90 "$U?service=WFS&version=2.0.0&request=GetFeature&typeNames=$t&count=3&srsName=urn:ogc:def:crs:EPSG::4326&$NS&$B" -o s.xml
+            head -c 5000 s.xml; echo
+            echo "==== $t Werte (200)"
+            curl -sS --max-time 120 "$U?service=WFS&version=2.0.0&request=GetFeature&typeNames=$t&count=300&$NS&$B" -o v.xml
+            for k in funktion befestigung befahrbarkeit art breiteDesVerkehrsweges markierung; do
+              echo "-- $k: $(grep -o "<adv:$k>[^<]*<" v.xml | sed -E 's/.*>//;s/<$//' | sort | uniq -c | sort -rn | tr '\n' ' ')"
+            done
+            ls -la v.xml
           done
