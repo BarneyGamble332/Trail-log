@@ -42,6 +42,13 @@ button:focus-visible,input:focus-visible,label:focus-within{outline:2px solid va
 .export-btn{width:34px;height:34px;display:grid;place-items:center;background:#fff;border:2px solid rgba(0,0,0,.2);border-radius:4px;cursor:pointer;padding:0;background-clip:padding-box}
 .export-btn svg{width:20px;height:20px;fill:none;stroke:#1c2227;stroke-width:1.8;stroke-linejoin:round}
 .export-btn:hover{background-color:#f4f4f4}
+.loc-btn svg{stroke-width:2}.loc-btn.on{background-color:#1b7fe8;border-color:rgba(0,0,0,.25)}.loc-btn.on svg{stroke:#fff}
+.me-mk{position:relative}
+.me-mk .me-dot{position:absolute;left:-9px;top:-9px;width:12px;height:12px;border-radius:50%;background:#1b7fe8;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5)}
+.me-mk .me-acc{position:absolute;border-radius:50%;background:rgba(27,127,232,.12);border:1px solid rgba(27,127,232,.35);pointer-events:none}
+.me-mk .me-cone{position:absolute;left:-60px;top:-60px;width:120px;height:120px;border-radius:50%;opacity:0;transition:transform .25s linear,opacity .3s;
+  background:conic-gradient(from -30deg at 50% 50%,rgba(27,127,232,.55) 0deg 60deg,transparent 60deg 360deg);
+  -webkit-mask:radial-gradient(circle at 50% 50%,#000 0 14%,rgba(0,0,0,.7) 35%,transparent 70%);mask:radial-gradient(circle at 50% 50%,#000 0 14%,rgba(0,0,0,.7) 35%,transparent 70%)}
 
 /* Wegweiser-Marke */
 .brand{position:fixed;z-index:1000;top:calc(env(safe-area-inset-top,0px) + 12px);left:max(12px,calc(env(safe-area-inset-left,0px) + 12px));
@@ -1359,6 +1366,66 @@ const ExportCtl=L.Control.extend({options:{position:'topright'},
     b.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>';
     L.DomEvent.disableClickPropagation(b); L.DomEvent.on(b,'click',openExport); return b; }});
 new ExportCtl().addTo(map);
+/* ---------- Eigene Position mit Blickrichtung (Lichtkegel) ----------
+   Ein Marker für Aufnahme und „Wo bin ich“. Richtung: im Stand vom Kompass, beim Fahren aus dem GPS-Kurs. */
+const ME={m:null,head:null,compass:null,gpsHead:null,gpsT:0,watch:null,on:false,first:false,ll:null};
+function meIcon(){ return L.divIcon({className:'me-mk',iconSize:[0,0],html:'<div class="me-cone"></div><div class="me-acc"></div><div class="me-dot"></div>'}); }
+function meShow(lat,lon,acc,gpsHeading,speed){
+  const ll=[lat,lon]; ME.ll=ll;
+  if(!ME.m) ME.m=L.marker(ll,{pane:'route',interactive:false,keyboard:false,icon:meIcon(),zIndexOffset:1000}).addTo(map); else ME.m.setLatLng(ll);
+  if(isFinite(gpsHeading)&&gpsHeading!==null&&speed>2){ ME.gpsHead=gpsHeading; ME.gpsT=Date.now(); }
+  const a=ME.m.getElement()&&ME.m.getElement().querySelector('.me-acc');
+  if(a&&isFinite(acc)){ const px=Math.min(120,acc/(40075016.686*Math.cos(lat*D2R)/Math.pow(2,map.getZoom()+8))); a.style.width=a.style.height=(2*px)+'px'; a.style.margin=(-px)+'px 0 0 '+(-px)+'px'; }
+  meHead();
+}
+function meHead(){
+  // GPS-Kurs der letzten 5 s hat Vorrang (Kompass am Lenker ist unzuverlässig), sonst Kompass
+  const h=Date.now()-ME.gpsT<5000?ME.gpsHead:ME.compass;
+  const c=ME.m&&ME.m.getElement()&&ME.m.getElement().querySelector('.me-cone'); if(!c) return;
+  if(h==null){ c.style.opacity='0'; return; }
+  c.style.opacity='1'; c.style.transform=`rotate(${Math.round(h)}deg)`;
+}
+function meHide(){ if(ME.m){ map.removeLayer(ME.m); ME.m=null; } }
+map.on('zoomend',()=>{ if(ME.m&&ME.ll) meShow(ME.ll[0],ME.ll[1],ME.acc,null,0); });
+/* Kompass: absolute Ausrichtung (Android). Leicht geglättet, Bildschirmdrehung berücksichtigt. */
+let compassOn=false;
+function compassStart(){
+  if(compassOn) return; compassOn=true;
+  const on=e=>{
+    let h=null;
+    if(typeof e.webkitCompassHeading==='number') h=e.webkitCompassHeading;
+    else if(e.absolute!==false&&e.alpha!=null) h=360-e.alpha;
+    if(h==null) return;
+    h=(h+((screen.orientation&&screen.orientation.angle)||0)+360)%360;
+    if(ME.compass==null) ME.compass=h; else { let d=((h-ME.compass+540)%360)-180; ME.compass=(ME.compass+d*0.25+360)%360; }
+    meHead();
+  };
+  if('ondeviceorientationabsolute' in window) window.addEventListener('deviceorientationabsolute',on);
+  else window.addEventListener('deviceorientation',on);
+}
+/* Knopf „Wo bin ich“: an = Position zeigen und hinfahren, nochmal = aus (während der Aufnahme bleibt sie sichtbar) */
+function locOn(){
+  if(!navigator.geolocation){ toast('Standort wird hier nicht unterstützt.'); return; }
+  ME.on=true; ME.first=true; locBtn.classList.add('on'); compassStart();
+  ME.watch=navigator.geolocation.watchPosition(p=>{
+    const c=p.coords; ME.acc=c.accuracy; meShow(c.latitude,c.longitude,c.accuracy,c.heading,c.speed||0);
+    if(ME.first){ ME.first=false; map.setView([c.latitude,c.longitude],Math.max(map.getZoom(),15)); }
+  },e=>{ if(e.code===1){ toast('Standortzugriff verweigert.',5000); locOff(); } else if(ME.first) toast('Standort wird gesucht …',3000); },
+  {enableHighAccuracy:true,maximumAge:5000,timeout:30000});
+}
+function locOff(){
+  ME.on=false; locBtn.classList.remove('on');
+  if(ME.watch!=null){ navigator.geolocation.clearWatch(ME.watch); ME.watch=null; }
+  if(!REC.on) meHide();
+}
+const LocCtl=L.Control.extend({options:{position:'topright'},
+  onAdd(){ const b=L.DomUtil.create('button','export-btn loc-btn'); b.type='button'; b.title='Wo bin ich'; b.setAttribute('aria-label',b.title);
+    b.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><circle cx="12" cy="12" r="8"/></svg>';
+    L.DomEvent.disableClickPropagation(b);
+    L.DomEvent.on(b,'click',()=>{ if(ME.on&&ME.ll&&!map.getBounds().pad(-0.2).contains(ME.ll)) map.panTo(ME.ll); else if(ME.on) locOff(); else locOn(); });
+    return b; }});
+const locBtn=new LocCtl().addTo(map).getContainer();
+
 
 /* ================================================================
    Trail Log: Touren-Liste, Detail, Aufnahme, Backup, Darstellung
@@ -1563,7 +1630,7 @@ async function recStart(){
   recLayer.clearLayers(); selLayer.clearLayers(); TOUR.sel=null; renderTours();
   REC.line=L.polyline([],{pane:'route',interactive:false,color:'#1b7fe8',weight:5,lineJoin:'round',lineCap:'round'}).addTo(recLayer);
   try{ REC.wl=await navigator.wakeLock.request('screen'); }catch(e){}
-  REC.tStart=Date.now();
+  REC.tStart=Date.now(); compassStart();
   if(NATIVE){
     try{
       if(!BG) throw new Error('Standort-Plugin fehlt');
@@ -1571,7 +1638,7 @@ async function recStart(){
       REC.bgId=await BG.addWatcher({backgroundTitle:'Trail Log',backgroundMessage:'Aufzeichnung läuft',requestPermissions:true,stale:false,distanceFilter:0},(l,err)=>{
         if(err){ if(err.code==='NOT_AUTHORIZED'){ toast('Standortzugriff fehlt. Bitte in den App-Einstellungen „Standort“ erlauben.',7000); try{ BG.openSettings(); }catch(e){} recStop(true); } else recErr(err); return; }
         if(!l) return;
-        recPos({coords:{latitude:l.latitude,longitude:l.longitude,altitude:l.altitude==null?null:l.altitude,accuracy:l.accuracy},timestamp:l.time||Date.now()});
+        recPos({coords:{latitude:l.latitude,longitude:l.longitude,altitude:l.altitude==null?null:l.altitude,accuracy:l.accuracy,heading:l.bearing,speed:l.speed},timestamp:l.time||Date.now()});
       });
     }catch(e){ toast('Aufzeichnung konnte nicht starten: '+String(e&&e.message||e).slice(0,120),8000); recStop(true); return; }
   } else REC.watch=navigator.geolocation.watchPosition(recPos,recErr,{enableHighAccuracy:true,maximumAge:1000,timeout:30000});
@@ -1602,7 +1669,7 @@ function recPos(p){
     if(REC.ref===null) REC.ref=el; else if(el-REC.ref>4){ REC.gain+=el-REC.ref; REC.ref=el; } else if(REC.ref-el>4) REC.ref=el;
   }
   const ll=[n[0],n[1]]; REC.line.addLatLng(ll);
-  if(!REC.dot) REC.dot=L.circleMarker(ll,{pane:'route',interactive:false,radius:8,color:'#fff',weight:3,fillColor:'#1b7fe8',fillOpacity:1}).addTo(recLayer); else REC.dot.setLatLng(ll);
+  ME.acc=c.accuracy; meShow(n[0],n[1],c.accuracy,c.heading,c.speed||0);
   if(REC.follow){ if(REC.pts.length===1) map.setView(ll,Math.max(map.getZoom(),16)); else if(!map.getBounds().pad(-0.3).contains(ll)) map.panTo(ll); }
   recTick(); if(NAV.r) navUpdate(n[0],n[1]); if(REC.pts.length%(NATIVE?5:15)===0) ls.set('rec',{type:REC.type,t0:REC.t0,pts:REC.pts});
 }
@@ -1627,7 +1694,8 @@ async function recBgPrep(){
 async function recStop(discard){
   try{ navigator.geolocation.clearWatch(REC.watch); }catch(e){} if(NATIVE&&REC.bgId!=null){ try{ await BG.removeWatcher({id:REC.bgId}); }catch(e){} REC.bgId=null; } clearInterval(REC.tick); try{ REC.wl&&REC.wl.release(); }catch(e){}
   const pts=REC.pts, type=REC.type, t0=REC.t0; REC.on=false; REC.pts=[]; REC.dist=0; REC.gain=0; REC.wl=null; widgetPush(true);
-  document.body.classList.remove('recording'); recUI(); $('#recHud').hidden=true; $('#navHud').hidden=true; NAV.idx=0; recLayer.clearLayers(); ls.set('rec',null);
+  document.body.classList.remove('recording'); recUI(); $('#recHud').hidden=true; $('#navHud').hidden=true; NAV.idx=0;
+  if(!ME.on) meHide(); recLayer.clearLayers(); ls.set('rec',null);
   if(!discard) await saveRecording(pts,type,t0);
 }
 async function saveRecording(pts,type,t0){
