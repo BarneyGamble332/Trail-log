@@ -93,6 +93,7 @@ jobs:
               @Override
               public void onCreate(Bundle savedInstanceState) {
                   registerPlugin(TrailWidgetPlugin.class);
+                  registerPlugin(TrailPhotosPlugin.class);
                   super.onCreate(savedInstanceState);
                   if (savedInstanceState == null) handleWidgetIntent(getIntent());
               }
@@ -328,6 +329,209 @@ jobs:
                   } catch (Exception e) {
                       if (out != null) { try { cr.delete(out, null, null); } catch (Exception ignore) {} }
                       call.reject("Speichern fehlgeschlagen: " + e.getMessage());
+                  }
+              }
+          }
+          JAVA
+
+          cat > $PKG/TrailPhotosPlugin.java <<'JAVA'
+          package de.bernhard.traillog;
+
+          import android.Manifest;
+          import android.content.ContentResolver;
+          import android.content.ContentUris;
+          import android.content.Intent;
+          import android.content.pm.PackageManager;
+          import android.database.Cursor;
+          import android.graphics.Bitmap;
+          import android.media.ExifInterface;
+          import android.net.Uri;
+          import android.os.Build;
+          import android.os.ParcelFileDescriptor;
+          import android.provider.MediaStore;
+          import android.provider.Settings;
+          import android.util.Base64;
+          import android.util.Size;
+          import androidx.core.content.ContextCompat;
+          import java.io.ByteArrayOutputStream;
+          import com.getcapacitor.JSArray;
+          import com.getcapacitor.JSObject;
+          import com.getcapacitor.PermissionState;
+          import com.getcapacitor.Plugin;
+          import com.getcapacitor.PluginCall;
+          import com.getcapacitor.PluginMethod;
+          import com.getcapacitor.annotation.CapacitorPlugin;
+          import com.getcapacitor.annotation.Permission;
+          import com.getcapacitor.annotation.PermissionCallback;
+
+          /* Fotos aus der Galerie: Aufnahmezeit und Standort (EXIF) lesen, Vorschaubilder liefern.
+             Die Fotos bleiben in der Galerie, die App merkt sich nur ID, Zeit und Ort. */
+          @CapacitorPlugin(name = "TrailPhotos", permissions = {
+              @Permission(alias = "images", strings = { Manifest.permission.READ_MEDIA_IMAGES }),
+              @Permission(alias = "selected", strings = { "android.permission.READ_MEDIA_VISUAL_USER_SELECTED" }),
+              @Permission(alias = "storage", strings = { Manifest.permission.READ_EXTERNAL_STORAGE }),
+              @Permission(alias = "medialoc", strings = { Manifest.permission.ACCESS_MEDIA_LOCATION })
+          })
+          public class TrailPhotosPlugin extends Plugin {
+
+              private boolean has(String p) {
+                  return ContextCompat.checkSelfPermission(getContext(), p) == PackageManager.PERMISSION_GRANTED;
+              }
+              private boolean full() {
+                  return Build.VERSION.SDK_INT >= 33 ? has(Manifest.permission.READ_MEDIA_IMAGES) : has(Manifest.permission.READ_EXTERNAL_STORAGE);
+              }
+              private boolean partial() {
+                  return !full() && Build.VERSION.SDK_INT >= 34 && has("android.permission.READ_MEDIA_VISUAL_USER_SELECTED");
+              }
+              private boolean loc() {
+                  return Build.VERSION.SDK_INT < 29 || has(Manifest.permission.ACCESS_MEDIA_LOCATION);
+              }
+              private JSObject state() {
+                  JSObject r = new JSObject();
+                  r.put("access", full() ? "full" : (partial() ? "partial" : "none"));
+                  r.put("loc", loc());
+                  return r;
+              }
+
+              @PluginMethod
+              public void status(PluginCall call) { call.resolve(state()); }
+
+              @PluginMethod
+              public void request(PluginCall call) {
+                  java.util.ArrayList<String> a = new java.util.ArrayList<>();
+                  if (Build.VERSION.SDK_INT >= 33) a.add("images"); else a.add("storage");
+                  if (Build.VERSION.SDK_INT >= 34) a.add("selected");
+                  if (Build.VERSION.SDK_INT >= 29) a.add("medialoc");
+                  requestPermissionForAliases(a.toArray(new String[0]), call, "permDone");
+              }
+
+              @PermissionCallback
+              private void permDone(PluginCall call) {
+                  // Standort in Medien hat keinen eigenen Dialog, er wird mit dem Fotozugriff erteilt
+                  if (full() && !loc() && Build.VERSION.SDK_INT >= 29 && getPermissionState("medialoc") != PermissionState.GRANTED) {
+                      requestPermissionForAlias("medialoc", call, "locDone");
+                      return;
+                  }
+                  call.resolve(state());
+              }
+
+              @PermissionCallback
+              private void locDone(PluginCall call) { call.resolve(state()); }
+
+              @PluginMethod
+              public void openSettings(PluginCall call) {
+                  try {
+                      Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getContext().getPackageName()));
+                      i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                      getContext().startActivity(i);
+                  } catch (Exception ignore) {}
+                  call.resolve();
+              }
+
+              /* Alle Fotos (oder nur DCIM/Camera) auflisten. Für Fotos, die seit "after" (Sekunden) neu oder geändert sind,
+                 werden Zeit und GPS gelesen. "ids" enthält alle vorhandenen Fotos, damit gelöschte aus der App verschwinden. */
+              @PluginMethod
+              public void scan(PluginCall call) {
+                  final long after = call.getData().optLong("after", 0L);
+                  final boolean camera = call.getBoolean("camera", true);
+                  new Thread(() -> {
+                      try {
+                          ContentResolver cr = getContext().getContentResolver();
+                          Uri base = MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
+                          String sel = null; String[] args = null;
+                          if (camera) {
+                              if (Build.VERSION.SDK_INT >= 29) { sel = MediaStore.MediaColumns.RELATIVE_PATH + " LIKE ?"; args = new String[]{ "DCIM/Camera/%" }; }
+                              else { sel = MediaStore.MediaColumns.DATA + " LIKE ?"; args = new String[]{ "%/DCIM/Camera/%" }; }
+                          }
+                          String[] proj = { MediaStore.MediaColumns._ID, MediaStore.Images.ImageColumns.DATE_TAKEN,
+                              MediaStore.MediaColumns.DATE_MODIFIED, MediaStore.MediaColumns.DATE_ADDED };
+                          boolean useLoc = loc() && Build.VERSION.SDK_INT >= 29;
+                          JSArray items = new JSArray(), ids = new JSArray();
+                          long maxMod = after; int done = 0, total = 0;
+                          try (Cursor c = cr.query(base, proj, sel, args, MediaStore.MediaColumns.DATE_MODIFIED + " DESC")) {
+                              if (c != null) {
+                                  total = c.getCount();
+                                  while (c.moveToNext()) {
+                                      long id = c.getLong(0), taken = c.getLong(1), mod = c.getLong(2), added = c.getLong(3);
+                                      ids.put(id);
+                                      if (mod > maxMod) maxMod = mod;
+                                      if (mod > after) {
+                                          Uri u = ContentUris.withAppendedId(base, id);
+                                          double lat = Double.NaN, lon = Double.NaN;
+                                          float[] ll = new float[2];
+                                          boolean ok = false;
+                                          if (useLoc) {
+                                              try (ParcelFileDescriptor pf = cr.openFileDescriptor(MediaStore.setRequireOriginal(u), "r")) {
+                                                  if (pf != null && new ExifInterface(pf.getFileDescriptor()).getLatLong(ll)) ok = true;
+                                              } catch (Exception ignore) {}
+                                          }
+                                          if (!ok && !useLoc) {
+                                              try (ParcelFileDescriptor pf = cr.openFileDescriptor(u, "r")) {
+                                                  if (pf != null && new ExifInterface(pf.getFileDescriptor()).getLatLong(ll)) ok = true;
+                                              } catch (Exception ignore) {}
+                                          }
+                                          if (ok && (ll[0] != 0 || ll[1] != 0)) { lat = ll[0]; lon = ll[1]; }
+                                          JSObject o = new JSObject();
+                                          o.put("id", id);
+                                          o.put("t", taken > 0 ? taken : added * 1000L);
+                                          if (!Double.isNaN(lat)) { o.put("lat", lat); o.put("lon", lon); }
+                                          items.put(o);
+                                      }
+                                      done++;
+                                      if (done % 100 == 0) {
+                                          JSObject p = new JSObject(); p.put("n", done); p.put("total", total);
+                                          notifyListeners("progress", p);
+                                      }
+                                  }
+                              }
+                          }
+                          JSObject r = new JSObject();
+                          r.put("items", items); r.put("ids", ids); r.put("after", maxMod); r.put("loc", useLoc || Build.VERSION.SDK_INT < 29);
+                          call.resolve(r);
+                      } catch (SecurityException e) {
+                          call.reject("Kein Zugriff auf Fotos");
+                      } catch (Exception e) {
+                          call.reject("Fotos konnten nicht gelesen werden: " + e.getMessage());
+                      }
+                  }).start();
+              }
+
+              /* Vorschaubild als JPEG-Daten-URL */
+              @PluginMethod
+              public void thumb(PluginCall call) {
+                  final long id = call.getData().optLong("id", -1L);
+                  final int size = call.getInt("size", 128);
+                  new Thread(() -> {
+                      try {
+                          Uri u = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id);
+                          Bitmap b;
+                          if (Build.VERSION.SDK_INT >= 29) b = getContext().getContentResolver().loadThumbnail(u, new Size(size, size), null);
+                          else b = MediaStore.Images.Thumbnails.getThumbnail(getContext().getContentResolver(), id, MediaStore.Images.Thumbnails.MINI_KIND, null);
+                          if (b == null) { call.reject("Kein Bild"); return; }
+                          ByteArrayOutputStream os = new ByteArrayOutputStream();
+                          b.compress(Bitmap.CompressFormat.JPEG, 82, os);
+                          JSObject r = new JSObject();
+                          r.put("url", "data:image/jpeg;base64," + Base64.encodeToString(os.toByteArray(), Base64.NO_WRAP));
+                          call.resolve(r);
+                      } catch (Exception e) {
+                          call.reject("Vorschau fehlgeschlagen");
+                      }
+                  }).start();
+              }
+
+              /* Foto in der Galerie-App öffnen */
+              @PluginMethod
+              public void open(PluginCall call) {
+                  long id = call.getData().optLong("id", -1L);
+                  try {
+                      Uri u = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id);
+                      Intent i = new Intent(Intent.ACTION_VIEW);
+                      i.setDataAndType(u, "image/*");
+                      i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+                      getContext().startActivity(i);
+                      call.resolve();
+                  } catch (Exception e) {
+                      call.reject("Foto nicht gefunden");
                   }
               }
           }
@@ -1097,7 +1301,11 @@ jobs:
               </application>'''
           assert '</application>' in s
           s=s.replace('</application>',rec,1)
-          perm='    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />\n</manifest>'
+          perm=('    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />\n'
+                '    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />\n'
+                '    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />\n'
+                '    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />\n'
+                '    <uses-permission android:name="android.permission.ACCESS_MEDIA_LOCATION" />\n</manifest>')
           s=s.replace('</manifest>',perm,1)
           open(m,'w').write(s)
           st='android/app/src/main/res/values/strings.xml'

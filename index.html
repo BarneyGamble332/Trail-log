@@ -180,6 +180,19 @@ ol.how{margin:0;padding-left:20px;color:var(--muted);font-size:14px;display:flex
 .pp-k{font:600 12px/1 var(--f-display);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
 .pp-n{font:700 20px/1.15 var(--f-display);margin:3px 0 6px}
 .pp-v{font-weight:600}
+.phm{background:none;border:0}
+.phm img{display:block;width:100%;height:100%;box-sizing:border-box;object-fit:cover;border:2px solid #fff;border-radius:7px;background:#9aa3aa;box-shadow:0 1px 4px rgba(0,0,0,.45)}
+.phm.many img{border-radius:8px}
+.phm b{position:absolute;right:-8px;top:-8px;background:#1c2227;color:#fff;font:600 11px/1 var(--f-num);padding:4px 6px;border-radius:999px;border:1px solid #fff}
+.php-img{display:block;width:100%;height:180px;object-fit:cover;border-radius:8px;background:var(--chip);margin-bottom:8px}
+.ph-tag{display:inline-block;font-size:12px;padding:3px 8px;border-radius:999px;background:var(--sign);color:var(--sign-ink);margin-top:4px}
+.phgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:6px}
+.phgrid button{position:relative;border:0;padding:0;background:var(--chip);border-radius:7px;overflow:hidden;aspect-ratio:1;cursor:pointer}
+.phgrid img{display:block;width:100%;height:100%;object-fit:cover}
+.phgrid .more-ph img{filter:brightness(.55)}
+.phgrid .more-ph b{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font:700 18px/1 var(--f-display)}
+.ph-sw{border-top:1px solid var(--line);margin-top:8px;padding-top:4px}
+#phOpts{margin:4px 0 6px}
 .pp ul{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
 .pp li span{display:block}
 .pp li small{color:var(--muted);font-size:12px}
@@ -358,6 +371,14 @@ canvas.prof{width:100%;height:120px;display:block}
           <label class="switch"><span>Nur erreichte anzeigen</span><input type="checkbox" id="tVisited"></label>
         </div>
         <p class="note">Gipfel und Almen kommen aus OpenStreetMap und werden ab Zoomstufe 11 für den Kartenausschnitt geladen. Erreicht heißt: eine Tour führt näher als 80 m (Gipfel) bzw. 100 m (Alm/Hütte) vorbei.</p>
+        <div class="switches ph-sw">
+          <label class="switch"><span>Fotos aus der Galerie</span><input type="checkbox" id="tPhotos"></label>
+        </div>
+        <div class="stack" id="phOpts" hidden>
+          <div class="seg" id="phMode"><button data-v="camera">Nur Kamera-Ordner</button><button data-v="all">Ganze Galerie</button></div>
+          <button class="btn" id="phScan">Galerie nach neuen Fotos durchsuchen</button>
+        </div>
+        <p class="note" id="phNote"></p>
       </div>
     </section>
 
@@ -1089,7 +1110,7 @@ function actsChanged(){
   S.acts.sort((a,b)=>a.d-b.d);
   byId=new Map(S.acts.map(a=>[a.id,a]));
   if(typeof TOUR!=='undefined'&&TOUR.sel&&!byId.has(TOUR.sel)){ TOUR.sel=null; selLayer.clearLayers(); }
-  rebuildGrid(); computeVisits(S.pois.values()); renderChips(); applyFilter(); renderData();
+  rebuildGrid(); computeVisits(S.pois.values()); if(phLayer){ phMatch(); renderPhotos(); phNote(); } renderChips(); applyFilter(); renderData();
 }
 function fitActs(){
   const src=S.acts.slice(-60); if(!src.length) return;
@@ -1180,7 +1201,7 @@ const setPeek=()=>{ const h=$('#sheetHead').offsetHeight; document.documentEleme
 new ResizeObserver(setPeek).observe($('#sheetHead')); window.addEventListener('resize',setPeek);
 
 map.on('moveend',()=>{ const c=map.getCenter(); ls.set('view',{c:[c.lat,c.lng],z:map.getZoom()});
-  renderPois(); clearTimeout(poiTimer); poiTimer=setTimeout(autoPois,700); });
+  renderPois(); renderPhotos(); clearTimeout(poiTimer); poiTimer=setTimeout(autoPois,700); });
 
 /* ---------- Bild / Poster speichern ---------- */
 function loadTile(url){ return new Promise(res=>{ const im=new Image(); im.crossOrigin='anonymous';
@@ -1501,11 +1522,12 @@ function renderDetail(a){
       <div class="tile"><div class="v sm">${fmtDur(mt)}</div><div class="l">Bewegungszeit</div></div>
       <div class="tile"><div class="v">${sp?fmt1.format(sp):'–'}<small>km/h</small></div><div class="l">Ø Tempo</div></div>
     </div>
+    ${phStrip(a)}
     <div><h3>Höhenprofil</h3><canvas id="prof" class="prof"></canvas><p class="note" id="profNote" hidden></p></div>
     <button class="btn" id="tFit">Auf Karte zeigen</button>
     <button class="btn danger" id="tDel">Tour löschen</button>
     <button class="btn" id="tGpx">Als GPX exportieren</button>`;
-  drawProfile($('#prof'),a);
+  drawProfile($('#prof'),a); phFill(el);
 }
 function drawProfile(cv,a){
   if(!cv) return; const note=$('#profNote'), w=cv.clientWidth, h=cv.clientHeight; if(!w) return;
@@ -1552,8 +1574,8 @@ function fitSel(a){
 }
 function openTour(id){
   const a=byId.get(id); if(!a) return;
-  TOUR.sel=id; map.closePopup(); openTab('tours'); sheet.classList.add('open');
-  renderTours(); const p=$('.panes'); if(p) p.scrollTop=0; showSel(a);
+  TOUR.sel=id; PH.allStrip=false; map.closePopup(); openTab('tours'); sheet.classList.add('open');
+  renderTours(); const p=$('.panes'); if(p) p.scrollTop=0; showSel(a); renderPhotos();
 }
 /* Einzelne Tour als GPX: gespeicherter (vereinfachter) Verlauf mit Höhen, Startzeit in den Metadaten.
    Lücken (z. B. Pausen ohne GPS) werden zu eigenen Segmenten. Zeit je Punkt, wenn die Tour sie hat (neuere Aufnahmen/Importe). */
@@ -1596,7 +1618,7 @@ async function armDelete(b){
 $('#tours').addEventListener('click',e=>{
   const li=e.target.closest('li[data-act]'); if(li){ openTour(li.dataset.act); return; }
   const b=e.target.closest('button'); if(!b) return;
-  if(b.id==='tBack'){ TOUR.sel=null; selLayer.clearLayers(); renderTours(); }
+  if(b.id==='tBack'){ TOUR.sel=null; selLayer.clearLayers(); renderTours(); renderPhotos(); }
   if(b.id==='tGpx'){ exportGpx(); return; }
   else if(b.id==='tMore'){ TOUR.n+=40; renderTours(); }
   else if(b.id==='tFit'){ const a=byId.get(TOUR.sel); if(a) fitSel(a); }
@@ -2252,15 +2274,206 @@ $('#navShow').onclick=()=>navDraw(true);
 $('#navDel').onclick=()=>{ NAV.r=null; NAV.cum=null; ls.set('navRoute',null); navDraw(false); toast('Route entfernt.'); };
 (()=>{ const r=ls.get('navRoute',null); if(r&&Array.isArray(r.c)&&r.c.length>=4){ NAV.r=r; navDraw(false); } else navUI(); })();
 
+/* ---------- Fotos aus der Galerie ----------
+   Fotos mit Standort erscheinen am Aufnahmeort. Fotos ohne Standort bekommen den Ort über die Aufnahmezeit:
+   lief zu der Zeit eine Tour, wird der Punkt auf dem Track dazwischen genommen. Sonst werden sie weggelassen.
+   Gespeichert werden nur Foto-ID, Zeit und Ort, die Bilder bleiben in der Galerie. */
+var PH={on:ls.get('photos',false),mode:ls.get('photos.mode','camera'),items:[],after:0,pts:[],byAct:new Map(),
+  thumbs:new Map(),busy:false,lastScan:0,loc:true};
+var phLayer=null;
+const PH_TOL=3*60e3; // 3 Minuten vor Start und nach Ende einer Tour zählen noch dazu
+const phPlug=()=>NATIVE?nativePlugin('TrailPhotos'):null;
+
+async function phLoadStore(meta){
+  const m=meta&&meta.find(x=>x.k==='photos');
+  if(m&&m.mode===PH.mode&&Array.isArray(m.items)){ PH.items=m.items; PH.after=+m.after||0; }
+}
+function phSave(){ return idb.put('meta',[{k:'photos',mode:PH.mode,after:PH.after,items:PH.items}]).catch(()=>{}); }
+
+/* Ort auf dem Track zum Zeitpunkt t (ms) */
+function posAt(a,t){
+  const c=a.c, n=c.length/2; if(n<1) return null;
+  const rel=(t-a.d)/1000;
+  if(a.ts&&a.ts.length===n){
+    const ts=a.ts; if(rel<=ts[0]) return [c[0],c[1]]; if(rel>=ts[n-1]) return [c[2*n-2],c[2*n-1]];
+    let lo=0,hi=n-1; while(hi-lo>1){ const m=(lo+hi)>>1; if(ts[m]<=rel) lo=m; else hi=m; }
+    const f=(rel-ts[lo])/((ts[hi]-ts[lo])||1);
+    return [c[2*lo]+(c[2*hi]-c[2*lo])*f, c[2*lo+1]+(c[2*hi+1]-c[2*lo+1])*f];
+  }
+  const f=Math.max(0,Math.min(1,rel/((a.dur||1)))), i=Math.round(f*(n-1));
+  return [c[2*i],c[2*i+1]];
+}
+const actEnd=a=>a.d+1000*((a.ts&&a.ts.length?a.ts[a.ts.length-1]:0)||a.dur||0);
+function phMatch(){
+  const W=S.acts.map(a=>({a,s:a.d,e:actEnd(a)})).filter(w=>isFinite(w.s)&&w.e>w.s).sort((x,y)=>x.s-y.s);
+  const pad=0.05; PH.pts=[]; PH.byAct=new Map();
+  for(const p of PH.items){
+    const t=p.t; let w=null;
+    if(W.length&&isFinite(t)){
+      let lo=0,hi=W.length; while(lo<hi){ const m=(lo+hi)>>1; if(W[m].s-PH_TOL<=t) lo=m+1; else hi=m; }
+      for(let i=lo-1,k=0;i>=0&&k<40;i--,k++){
+        const x=W[i]; if(t>x.e+PH_TOL) continue;
+        if(p.lat!=null){ const b=x.a.bb; if(p.lat<b[0]-pad||p.lat>b[2]+pad||p.lon<b[1]-pad||p.lon>b[3]+pad) continue; }
+        w=x; break;
+      }
+    }
+    let lat=p.lat, lon=p.lon, est=false;
+    if(lat==null&&w){ const q=posAt(w.a,t); if(q){ lat=q[0]; lon=q[1]; est=true; } }
+    if(lat==null) continue;
+    const q={id:p.id,t,lat,lon,est,act:w?w.a.id:null}; PH.pts.push(q);
+    if(q.act){ let l=PH.byAct.get(q.act); if(!l) PH.byAct.set(q.act,l=[]); l.push(q); }
+  }
+  PH.byAct.forEach(l=>l.sort((x,y)=>x.t-y.t));
+}
+
+/* Vorschaubilder: nacheinander vom Handy holen, im Speicher behalten */
+const phQ=[]; let phQRun=false;
+function phThumb(id,size=128){
+  const k=id+'/'+size; if(PH.thumbs.has(k)) return Promise.resolve(PH.thumbs.get(k));
+  return new Promise(res=>{ phQ.push({id,size,k,res}); phPump(); });
+}
+async function phPump(){
+  if(phQRun) return; phQRun=true; const P=phPlug();
+  while(phQ.length){
+    const j=phQ.shift(); if(PH.thumbs.has(j.k)){ j.res(PH.thumbs.get(j.k)); continue; }
+    let u=''; try{ if(P) u=(await P.thumb({id:j.id,size:j.size})).url||''; }catch(e){}
+    if(u&&j.size<=160){ if(PH.thumbs.size>1500) PH.thumbs.delete(PH.thumbs.keys().next().value); }
+    if(u) PH.thumbs.set(j.k,u); j.res(u);
+  }
+  phQRun=false;
+}
+function phFill(root){
+  (root||document).querySelectorAll('img[data-ph]:not([src])').forEach(img=>{
+    const sz=+img.dataset.sz||128; phThumb(+img.dataset.ph,sz).then(u=>{ if(u) img.src=u; else img.classList.add('none'); });
+  });
+}
+
+function renderPhotos(){
+  if(!phLayer) return; phLayer.clearLayers();
+  const sel=typeof TOUR!=='undefined'&&TOUR.sel?PH.byAct.get(TOUR.sel):null;
+  const list=PH.on?PH.pts:(sel||[]); if(!list.length) return;
+  const z=map.getZoom(), b=map.getBounds().pad(0.15), cell=58, grp=new Map();
+  for(const p of list){
+    if(!b.contains([p.lat,p.lon])) continue;
+    const pt=map.project([p.lat,p.lon],z), k=Math.floor(pt.x/cell)+':'+Math.floor(pt.y/cell);
+    let g=grp.get(k); if(!g) grp.set(k,g=[]); g.push(p);
+  }
+  let n=0;
+  for(const g of grp.values()){
+    if(++n>300) break;
+    g.sort((x,y)=>y.t-x.t);
+    let la=0,lo=0; g.forEach(p=>{la+=p.lat;lo+=p.lon;}); const ll=[la/g.length,lo/g.length], many=g.length>1;
+    const icon=L.divIcon({className:'phm'+(many?' many':''),iconSize:many?[44,44]:[38,38],
+      html:`<img data-ph="${g[0].id}" alt="">${many?`<b>${g.length>99?'99+':g.length}</b>`:''}`});
+    const m=L.marker(ll,{icon,keyboard:false,zIndexOffset:900});
+    m.on('click',()=>{ if(many&&z<17) map.flyTo(ll,Math.min(18,z+2)); else phPopup(g,many?ll:null); });
+    phLayer.addLayer(m);
+  }
+  phFill($('#map'));
+}
+function phPopup(g,ll){
+  if(g.length>1){
+    L.popup({maxWidth:280}).setLatLng(ll).setContent(`<div class="pp"><div class="pp-k">${g.length} Fotos</div><div class="phgrid">${
+      g.slice(0,30).map(p=>`<button data-ph-pick="${p.id}"><img data-ph="${p.id}" alt=""></button>`).join('')}</div></div>`).openOn(map);
+    phFill(document.querySelector('.leaflet-popup')); return;
+  }
+  const p=g[0], a=p.act?byId.get(p.act):null, d=new Date(p.t);
+  L.popup({maxWidth:280,minWidth:240}).setLatLng([p.lat,p.lon]).setContent(`<div class="pp php">
+    <img class="php-img" data-ph="${p.id}" data-sz="480" alt="">
+    <div class="pp-n" style="font-size:17px">${fmtDate(p.t)}, ${fmtTime(p.t)}</div>
+    ${a?`<div class="pp-v" style="font-weight:500">Tour: ${esc(a.n)} · ${fmt1.format(a.dist/1000)} km</div>`:''}
+    ${p.est?'<span class="ph-tag">Ort über Aufnahmezeit bestimmt</span>':''}
+    <div class="kbtns" style="margin-top:8px">${a?`<button class="btn" data-ph-tour="${esc(a.id)}">Tour öffnen</button>`:''}<button class="btn" data-ph-open="${p.id}">In Galerie öffnen</button></div>
+  </div>`).openOn(map);
+  phFill(document.querySelector('.leaflet-popup'));
+}
+function phShow(id){
+  const p=PH.pts.find(x=>x.id===id); if(!p) return;
+  if(window.innerWidth<900) sheet.classList.remove('open');
+  map.setView([p.lat,p.lon],Math.max(map.getZoom(),15)); setTimeout(()=>phPopup([p]),250);
+}
+document.addEventListener('click',e=>{
+  const t=e.target.closest('[data-ph-tour],[data-ph-open],[data-ph-pick],[data-ph-show],[data-ph-more]'); if(!t) return;
+  if(t.dataset.phTour){ openTour(t.dataset.phTour); }
+  else if(t.dataset.phOpen){ const P=phPlug(); if(P) P.open({id:+t.dataset.phOpen}).catch(()=>toast('Foto nicht mehr in der Galerie.')); }
+  else if(t.dataset.phPick){ const p=PH.pts.find(x=>x.id===+t.dataset.phPick); if(p) phPopup([p]); }
+  else if(t.dataset.phShow){ phShow(+t.dataset.phShow); }
+  else if(t.dataset.phMore){ PH.allStrip=true; const a=byId.get(TOUR.sel); const el=$('#phStrip'); if(a&&el){ el.outerHTML=phStrip(a); phFill($('#phStrip')); } }
+});
+
+/* Fotos in der Tour-Ansicht */
+function phStrip(a){
+  const l=PH.byAct.get(a.id)||[]; if(!l.length) return '';
+  const max=PH.allStrip?l.length:8, part=l.length>max?l.slice(0,max-1):l;
+  return `<div id="phStrip"><h3>Fotos (${fmt0.format(l.length)})</h3><div class="phgrid">${
+    part.map(p=>`<button data-ph-show="${p.id}"><img data-ph="${p.id}" alt=""></button>`).join('')}${
+    l.length>part.length?`<button data-ph-more="1" class="more-ph"><img data-ph="${l[part.length].id}" alt=""><b>+${l.length-part.length}</b></button>`:''}</div>
+    <p class="note" style="margin-top:6px">Die Fotos sind auch auf der Karte am Track eingezeichnet.</p></div>`;
+}
+
+/* Galerie durchsuchen. full: alles neu lesen (z. B. nach Wechsel Kamera-Ordner / ganze Galerie) */
+async function phScan(full,quiet){
+  const P=phPlug(); if(!P||PH.busy) return; PH.busy=true;
+  let h=null;
+  try{
+    if(!quiet){ busy.show('Fotos suchen'); busy.set(0,'Galerie wird gelesen …');
+      h=await P.addListener('progress',e=>busy.set(e.total?e.n/e.total:0,`${fmt0.format(e.n)} von ${fmt0.format(e.total)} Fotos`)); }
+    const r=await P.scan({after:full?0:PH.after,camera:PH.mode==='camera'});
+    const keep=new Set(r.ids||[]), fresh=new Map((r.items||[]).map(o=>[o.id,o]));
+    const old=full?[]:PH.items.filter(o=>keep.has(o.id)&&!fresh.has(o.id));
+    PH.items=old.concat([...fresh.values()].map(o=>({id:o.id,t:o.t,lat:o.lat!=null?+o.lat:null,lon:o.lon!=null?+o.lon:null})));
+    PH.after=r.after||PH.after; PH.loc=r.loc!==false; PH.lastScan=Date.now();
+    await phSave(); phMatch(); renderPhotos(); phNote();
+    if(TOUR.sel&&byId.has(TOUR.sel)) renderTours();
+    if(!quiet) toast(`${fmt0.format(PH.pts.length)} Fotos auf der Karte.`);
+  }catch(e){ if(!quiet) toast(String(e&&e.message||e).includes('Zugriff')?'Kein Zugriff auf die Fotos.':'Fotos konnten nicht gelesen werden.'); }
+  finally{ if(h&&h.remove) h.remove(); if(!quiet) busy.hide(); PH.busy=false; }
+}
+async function phAccess(){
+  const P=phPlug(); if(!P) return false;
+  let s=await P.status().catch(()=>({access:'none'}));
+  if(s.access==='none') s=await P.request().catch(()=>({access:'none'}));
+  if(s.access==='none'){ toast('Ohne Zugriff auf Fotos geht es nicht. In den App-Einstellungen unter Berechtigungen „Fotos und Videos“ erlauben.',7000); P.openSettings().catch(()=>{}); return false; }
+  if(s.access==='partial') toast('Die App sieht nur die freigegebenen Fotos. Für alle Fotos in den App-Einstellungen „Alle erlauben“ wählen.',7000);
+  else if(!s.loc) toast('Standort in Fotos ist nicht erlaubt. Fotos werden nur über die Aufnahmezeit zugeordnet.',6000);
+  return true;
+}
+function phNote(){
+  const el=$('#phNote'); if(!el) return; $('#phOpts').hidden=!PH.on;
+  segSet('phMode',PH.mode);
+  if(!NATIVE){ el.textContent='Fotos aus der Galerie gibt es nur in der Android-App.'; return; }
+  const est=PH.pts.filter(p=>p.est).length;
+  el.textContent=(PH.lastScan||PH.items.length?`${fmt0.format(PH.pts.length)} Fotos auf der Karte${est?`, davon ${fmt0.format(est)} über die Aufnahmezeit`:''}. `:'')+
+    'Fotos mit Standort erscheinen am Aufnahmeort. Fotos ohne Standort werden über die Aufnahmezeit einer Tour zugeordnet, sonst weggelassen.'+
+    (PH.loc?'':' Standort in Fotos ist gerade nicht erlaubt.');
+}
+function phInit(meta){
+  phLayer=L.layerGroup().addTo(map);
+  const el=$('#tPhotos'); el.checked=PH.on;
+  el.addEventListener('change',async()=>{
+    if(el.checked&&!NATIVE){ el.checked=false; toast('Fotos aus der Galerie gibt es nur in der Android-App.'); phNote(); return; }
+    if(el.checked&&!(await phAccess())){ el.checked=false; return; }
+    PH.on=el.checked; ls.set('photos',PH.on); phNote(); renderPhotos();
+    if(PH.on) phScan(!PH.items.length);
+  });
+  $('#phMode').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b||b.dataset.v===PH.mode) return;
+    PH.mode=b.dataset.v; ls.set('photos.mode',PH.mode); PH.items=[]; PH.after=0; phMatch(); renderPhotos(); phNote(); phScan(true); });
+  $('#phScan').onclick=async()=>{ if(await phAccess()) phScan(false); };
+  phLoadStore(meta); phMatch(); renderPhotos(); phNote();
+  if(PH.on&&NATIVE) phScan(!PH.items.length,!!PH.items.length);
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&PH.on&&NATIVE&&Date.now()-PH.lastScan>60e3) phScan(false,true); });
+}
+
 /* ---------- Start ---------- */
 (async()=>{
+  let metaAll=[];
   setBase(S.base); openTab(ls.get('tab','tours')); applyTheme();
   try{
     await idb.open();
     const [acts,pois,meta]=await Promise.all([idb.all('acts'),idb.all('pois'),idb.all('meta')]);
     // ältere Touren mit deutschen Typnamen aus dem Strava-Export (z. B. „Radfahrt“) auf die festen Schlüssel umstellen
     const fix=acts.filter(a=>typeKey(a.t)!==a.t); fix.forEach(a=>{ a.t=typeKey(a.t); }); if(fix.length) idb.put('acts',fix).catch(()=>{});
-    S.acts=acts; pois.forEach(p=>S.pois.set(p.id,p));
+    S.acts=acts; pois.forEach(p=>S.pois.set(p.id,p)); metaAll=meta;
     const c=meta.find(m=>m.k==='cells'); if(c) c.v.forEach(k=>S.cells.add(k));
   }catch(e){ toast('Lokaler Speicher ist nicht verfügbar. Importierte Touren gehen beim Schließen verloren.',6000); }
   if(navigator.storage&&navigator.storage.persist) navigator.storage.persist().catch(()=>{});
@@ -2269,6 +2482,7 @@ $('#navDel').onclick=()=>{ NAV.r=null; NAV.cum=null; ls.set('navRoute',null); na
   if(v&&v.c) map.setView(v.c,v.z); else if(S.acts.length) fitActs();
   if(!S.acts.length){ openTab('data'); sheet.classList.add('open'); }
   setPeek(); autoPois(); restoreCheck();
+  try{ phInit(metaAll); }catch(e){ console.error(e); }
   kInit();
 })();
 </script>
