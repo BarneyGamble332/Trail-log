@@ -184,6 +184,18 @@ ol.how{margin:0;padding-left:20px;color:var(--muted);font-size:14px;display:flex
 .phm img{display:block;width:100%;height:100%;box-sizing:border-box;object-fit:cover;border:2px solid #fff;border-radius:7px;background:#9aa3aa;box-shadow:0 1px 4px rgba(0,0,0,.45)}
 .phm.many img{border-radius:8px}
 .phm b{position:absolute;right:-8px;top:-8px;background:#1c2227;color:#fff;font:600 11px/1 var(--f-num);padding:4px 6px;border-radius:999px;border:1px solid #fff}
+.phpop .leaflet-popup-content{margin:0;min-width:280px}
+.phpop .leaflet-popup-content-wrapper{padding:0;overflow:hidden;border-radius:14px}
+.phv-pic{position:relative}
+.phv-pic .php-img{height:240px;border-radius:0;margin:0}
+.phv-x{position:absolute;right:8px;top:8px;width:44px;height:44px;border-radius:50%;border:0;background:rgba(0,0,0,.6);color:#fff;font-size:22px;line-height:1;cursor:pointer}
+.phv-nav{position:absolute;top:50%;transform:translateY(-50%);width:44px;height:44px;border-radius:50%;border:0;background:rgba(0,0,0,.45);color:#fff;font-size:30px;line-height:1;padding-bottom:4px;cursor:pointer}
+.phv-nav.l{left:8px}.phv-nav.r{right:8px}
+.phv-n{position:absolute;left:50%;bottom:8px;transform:translateX(-50%);background:rgba(0,0,0,.55);color:#fff;font:500 13px/1 var(--f-num);padding:5px 10px;border-radius:999px}
+.phv-info{padding:10px 14px 14px}
+.phmini,.tl li span.phmini{display:flex;gap:4px;margin-top:6px}
+.phmini img{width:34px;height:34px;border-radius:6px;object-fit:cover;background:var(--chip)}
+.phmini em{font-style:normal;width:34px;height:34px;border-radius:6px;background:var(--chip);display:flex;align-items:center;justify-content:center;font:500 12px/1 var(--f-num);color:var(--muted)}
 .php-img{display:block;width:100%;height:180px;object-fit:cover;border-radius:8px;background:var(--chip);margin-bottom:8px}
 .ph-tag{display:inline-block;font-size:12px;padding:3px 8px;border-radius:999px;background:var(--sign);color:var(--sign-ink);margin-top:4px}
 .phgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:6px}
@@ -1504,11 +1516,11 @@ function renderTours(){
   TOUR.sel=null;
   const list=visible.slice().reverse(), part=list.slice(0,TOUR.n);
   el.innerHTML=(visible.length<S.acts.length?`<p class="note">${fmt0.format(visible.length)} von ${fmt0.format(S.acts.length)} Touren (Filter aktiv)</p>`:'')+
-    (part.length?`<ul class="tl">${part.map(a=>`<li data-act="${esc(a.id)}"><canvas></canvas><div><b>${fmt1.format(a.dist/1000)} km · ${fmt0.format(a.gain)} m · ${fmtDur(moving(a))}</b><span>${fmtDate(a.d)}, ${fmtTime(a.d)} · ${esc(typeLabel(a.t))}</span></div></li>`).join('')}</ul>`
+    (part.length?`<ul class="tl">${part.map(a=>`<li data-act="${esc(a.id)}"><canvas></canvas><div><b>${fmt1.format(a.dist/1000)} km · ${fmt0.format(a.gain)} m · ${fmtDur(moving(a))}</b><span>${fmtDate(a.d)}, ${fmtTime(a.d)} · ${esc(typeLabel(a.t))}</span>${phMini(a)}</div></li>`).join('')}</ul>`
       :'<p class="empty">Keine Touren für diesen Filter.</p>')+
     (list.length>part.length?`<button class="more" id="tMore">Weitere ${fmt0.format(Math.min(40,list.length-part.length))} von ${fmt0.format(list.length-part.length)} anzeigen</button>`:'');
   const col=cssVar('--peak-hit')||'#c4361b';
-  el.querySelectorAll('.tl li').forEach((li,i)=>thumb(li.querySelector('canvas'),part[i],col));
+  el.querySelectorAll('.tl li').forEach((li,i)=>thumb(li.querySelector('canvas'),part[i],col)); phFill(el);
 }
 
 /* ---------- Detail ---------- */
@@ -2352,54 +2364,88 @@ function renderPhotos(){
   if(!phLayer) return; phLayer.clearLayers();
   const sel=typeof TOUR!=='undefined'&&TOUR.sel?PH.byAct.get(TOUR.sel):null;
   const list=PH.on?PH.pts:(sel||[]); if(!list.length) return;
-  const z=map.getZoom(), b=map.getBounds().pad(0.15), cell=58, grp=new Map();
-  for(const p of list){
-    if(!b.contains([p.lat,p.lon])) continue;
-    const pt=map.project([p.lat,p.lon],z), k=Math.floor(pt.x/cell)+':'+Math.floor(pt.y/cell);
-    let g=grp.get(k); if(!g) grp.set(k,g=[]); g.push(p);
+  // nach Abstand gruppieren: alles, was näher als ein Vorschaubild beisammen liegt, wird ein Stapel
+  const z=map.getZoom(), b=map.getBounds().pad(0.15), R=48, cells=new Map(), groups=[];
+  const vis=list.filter(p=>b.contains([p.lat,p.lon])).sort((x,y)=>y.t-x.t);
+  for(const p of vis){
+    const pt=map.project([p.lat,p.lon],z), cx=Math.floor(pt.x/R), cy=Math.floor(pt.y/R);
+    let hit=null;
+    for(let dx=-1;dx<=1&&!hit;dx++) for(let dy=-1;dy<=1&&!hit;dy++){
+      const c=cells.get((cx+dx)+':'+(cy+dy)); if(c) for(const g of c){ if(Math.hypot(g.x-pt.x,g.y-pt.y)<R){ hit=g; break; } }
+    }
+    if(hit){ hit.ps.push(p); continue; }
+    const g={x:pt.x,y:pt.y,ps:[p]}; groups.push(g);
+    const k=cx+':'+cy; let c=cells.get(k); if(!c) cells.set(k,c=[]); c.push(g);
   }
-  let n=0;
-  for(const g of grp.values()){
-    if(++n>300) break;
-    g.sort((x,y)=>y.t-x.t);
-    let la=0,lo=0; g.forEach(p=>{la+=p.lat;lo+=p.lon;}); const ll=[la/g.length,lo/g.length], many=g.length>1;
+  groups.slice(0,300).forEach(g=>{
+    const many=g.ps.length>1, ll=map.unproject([g.x,g.y],z);
     const icon=L.divIcon({className:'phm'+(many?' many':''),iconSize:many?[44,44]:[38,38],
-      html:`<img data-ph="${g[0].id}" alt="">${many?`<b>${g.length>99?'99+':g.length}</b>`:''}`});
+      html:`<img data-ph="${g.ps[0].id}" alt="">${many?`<b>${g.ps.length>99?'99+':g.ps.length}</b>`:''}`});
     const m=L.marker(ll,{icon,keyboard:false,zIndexOffset:900});
-    m.on('click',()=>{ if(many&&z<17) map.flyTo(ll,Math.min(18,z+2)); else phPopup(g,many?ll:null); });
+    m.on('click',()=>phStack(g.ps));
     phLayer.addLayer(m);
-  }
+  });
   phFill($('#map'));
 }
-function phPopup(g,ll){
-  if(g.length>1){
-    L.popup({maxWidth:280}).setLatLng(ll).setContent(`<div class="pp"><div class="pp-k">${g.length} Fotos</div><div class="phgrid">${
-      g.slice(0,30).map(p=>`<button data-ph-pick="${p.id}"><img data-ph="${p.id}" alt=""></button>`).join('')}</div></div>`).openOn(map);
-    phFill(document.querySelector('.leaflet-popup')); return;
+/* Stapel antippen: so weit hineinzoomen, dass die Fotos auseinandergehen; liegen sie fast am selben Punkt, gleich blättern */
+function phStack(ps){
+  const l=ps.slice().sort((x,y)=>x.t-y.t);
+  if(l.length===1){ phView(l,0); return; }
+  const z=map.getZoom(), bb=L.latLngBounds(l.map(p=>[p.lat,p.lon]));
+  const a=map.project(bb.getSouthWest(),z), c=map.project(bb.getNorthEast(),z), ext=Math.max(Math.abs(c.x-a.x),Math.abs(c.y-a.y));
+  if(ext*Math.pow(2,18-z)<48){ phView(l,0); return; } // gehen auch ganz nah nicht auseinander
+  let zz=z+Math.ceil(Math.log2(60/ext));
+  zz=Math.min(zz,map.getBoundsZoom(bb.pad(0.3)));
+  if(zz<=z) zz=z+1;
+  if(zz>18||z>=18){ phView(l,0); return; }
+  map.closePopup(); map.flyTo(bb.getCenter(),zz,{duration:.5});
+}
+/* Foto-Ansicht: großes Bild, großes X, bei mehreren Fotos Pfeile und Wischen */
+const PHV={list:[],i:0,pop:null};
+function phView(list,i){
+  PHV.list=list; PHV.i=(i+list.length)%list.length;
+  const p=list[PHV.i], a=p.act?byId.get(p.act):null, n=list.length;
+  const html=`<div class="phv">
+    <div class="phv-pic"><img class="php-img" data-ph="${p.id}" data-sz="720" alt="">
+      <button class="phv-x" data-ph-close="1" aria-label="Schließen">✕</button>
+      ${n>1?`<button class="phv-nav l" data-ph-step="-1" aria-label="Voriges Foto">‹</button><button class="phv-nav r" data-ph-step="1" aria-label="Nächstes Foto">›</button><span class="phv-n">${PHV.i+1} / ${n}</span>`:''}
+    </div>
+    <div class="phv-info"><div class="pp-n" style="font-size:17px;margin:0">${fmtDate(p.t)}, ${fmtTime(p.t)}</div>
+      ${a?`<div class="note" style="margin-top:2px">Tour: ${esc(a.n)} · ${fmt1.format(a.dist/1000)} km</div>`:''}
+      ${p.est?'<span class="ph-tag">Ort über Aufnahmezeit bestimmt</span>':''}
+      <div class="kbtns" style="margin-top:10px">${a?`<button class="btn" data-ph-tour="${esc(a.id)}">Tour öffnen</button>`:''}<button class="btn" data-ph-open="${p.id}">In Galerie öffnen</button></div>
+    </div></div>`;
+  if(PHV.pop&&map.hasLayer(PHV.pop)){ PHV.pop.setLatLng([p.lat,p.lon]).setContent(html); }
+  else PHV.pop=L.popup({className:'phpop',maxWidth:320,minWidth:280,closeButton:false,autoPanPadding:[16,70]}).setLatLng([p.lat,p.lon]).setContent(html).openOn(map);
+  const root=PHV.pop.getElement(); phFill(root);
+  const pic=root&&root.querySelector('.phv-pic');
+  if(pic&&n>1){ let x0=null;
+    pic.addEventListener('touchstart',e=>{ x0=e.touches[0].clientX; },{passive:true});
+    pic.addEventListener('touchend',e=>{ if(x0==null) return; const dx=e.changedTouches[0].clientX-x0; x0=null; if(Math.abs(dx)>40) phView(PHV.list,PHV.i+(dx<0?1:-1)); });
   }
-  const p=g[0], a=p.act?byId.get(p.act):null, d=new Date(p.t);
-  L.popup({maxWidth:280,minWidth:240}).setLatLng([p.lat,p.lon]).setContent(`<div class="pp php">
-    <img class="php-img" data-ph="${p.id}" data-sz="480" alt="">
-    <div class="pp-n" style="font-size:17px">${fmtDate(p.t)}, ${fmtTime(p.t)}</div>
-    ${a?`<div class="pp-v" style="font-weight:500">Tour: ${esc(a.n)} · ${fmt1.format(a.dist/1000)} km</div>`:''}
-    ${p.est?'<span class="ph-tag">Ort über Aufnahmezeit bestimmt</span>':''}
-    <div class="kbtns" style="margin-top:8px">${a?`<button class="btn" data-ph-tour="${esc(a.id)}">Tour öffnen</button>`:''}<button class="btn" data-ph-open="${p.id}">In Galerie öffnen</button></div>
-  </div>`).openOn(map);
-  phFill(document.querySelector('.leaflet-popup'));
+  // nächstes und voriges Bild schon laden, damit das Blättern flüssig ist
+  if(n>1){ phThumb(list[(PHV.i+1)%n].id,720); phThumb(list[(PHV.i-1+n)%n].id,720); }
 }
 function phShow(id){
-  const p=PH.pts.find(x=>x.id===id); if(!p) return;
+  const a=TOUR.sel?PH.byAct.get(TOUR.sel):null, l=a&&a.some(p=>p.id===id)?a:PH.pts.filter(p=>p.id===id); if(!l.length) return;
+  const i=l.findIndex(p=>p.id===id), p=l[i];
   if(window.innerWidth<900) sheet.classList.remove('open');
-  map.setView([p.lat,p.lon],Math.max(map.getZoom(),15)); setTimeout(()=>phPopup([p]),250);
+  map.setView([p.lat,p.lon],Math.max(map.getZoom(),15)); setTimeout(()=>phView(l,i),250);
 }
 document.addEventListener('click',e=>{
-  const t=e.target.closest('[data-ph-tour],[data-ph-open],[data-ph-pick],[data-ph-show],[data-ph-more]'); if(!t) return;
+  const t=e.target.closest('[data-ph-tour],[data-ph-open],[data-ph-show],[data-ph-more],[data-ph-close],[data-ph-step]'); if(!t) return;
   if(t.dataset.phTour){ openTour(t.dataset.phTour); }
   else if(t.dataset.phOpen){ const P=phPlug(); if(P) P.open({id:+t.dataset.phOpen}).catch(()=>toast('Foto nicht mehr in der Galerie.')); }
-  else if(t.dataset.phPick){ const p=PH.pts.find(x=>x.id===+t.dataset.phPick); if(p) phPopup([p]); }
+  else if(t.dataset.phClose){ map.closePopup(); }
+  else if(t.dataset.phStep){ phView(PHV.list,PHV.i+(+t.dataset.phStep)); }
   else if(t.dataset.phShow){ phShow(+t.dataset.phShow); }
   else if(t.dataset.phMore){ PH.allStrip=true; const a=byId.get(TOUR.sel); const el=$('#phStrip'); if(a&&el){ el.outerHTML=phStrip(a); phFill($('#phStrip')); } }
 });
+/* kleine Vorschaubilder in der Tourenliste */
+function phMini(a){
+  const l=PH.byAct.get(a.id); if(!l||!l.length) return '';
+  return `<span class="phmini">${l.slice(0,3).map(p=>`<img data-ph="${p.id}" alt="">`).join('')}${l.length>3?`<em>+${l.length-3}</em>`:''}</span>`;
+}
 
 /* Fotos in der Tour-Ansicht */
 function phStrip(a){
@@ -2424,7 +2470,7 @@ async function phScan(full,quiet){
     PH.items=old.concat([...fresh.values()].map(o=>({id:o.id,t:o.t,lat:o.lat!=null?+o.lat:null,lon:o.lon!=null?+o.lon:null})));
     PH.after=r.after||PH.after; PH.loc=r.loc!==false; PH.lastScan=Date.now();
     await phSave(); phMatch(); renderPhotos(); phNote();
-    if(TOUR.sel&&byId.has(TOUR.sel)) renderTours();
+    renderTours();
     if(!quiet) toast(`${fmt0.format(PH.pts.length)} Fotos auf der Karte.`);
   }catch(e){ if(!quiet) toast(String(e&&e.message||e).includes('Zugriff')?'Kein Zugriff auf die Fotos.':'Fotos konnten nicht gelesen werden.'); }
   finally{ if(h&&h.remove) h.remove(); if(!quiet) busy.hide(); PH.busy=false; }
