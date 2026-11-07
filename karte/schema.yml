@@ -3,7 +3,7 @@
 # Wichtig für MTB: Wege behalten mtb:scale, sac_scale, tracktype, surface und trail_visibility.
 schema_name: Trail Log MTB
 schema_description: Offline-Karte fürs Mountainbiken (Wege mit S-Skala, Höhenlinien, Gipfel, Hütten, Almen)
-attribution: <a href="https://www.openstreetmap.org/copyright">&copy; OpenStreetMap-Mitwirkende</a>, Höhenlinien &copy; Copernicus DEM, Forstweg-Abgleich: Datenquelle Bayerische Vermessungsverwaltung – www.geodaten.bayern.de (CC BY 4.0)
+attribution: '<a href="https://www.openstreetmap.org/copyright">&copy; OpenStreetMap-Mitwirkende</a>, Höhenlinien &copy; Copernicus DEM, Forstweg-Abgleich: Datenquelle Bayerische Vermessungsverwaltung – www.geodaten.bayern.de (CC BY 4.0)'
 args:
   osm_path: region.osm.pbf
   contours_major: contours_major.gpkg
