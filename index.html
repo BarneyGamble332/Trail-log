@@ -1720,7 +1720,7 @@ function nativePlugin(name){
 }
 let BG=null;
 if(NATIVE){ BG=nativePlugin('BackgroundGeolocation'); }
-const REC={mv:0,lastMoveT:0,paused:false,bgId:null,on:false,pts:[],t0:0,dist:0,watch:null,wl:null,tick:null,follow:true,line:null,dot:null,errT:0,rej:0,gain:0,ref:null,ab:[],type:ls.get('rec.type','mountainbikeride')};
+const REC={mvAcc:0,runFrom:0,moveT:0,paused:false,bgId:null,on:false,pts:[],t0:0,dist:0,watch:null,wl:null,tick:null,follow:true,line:null,dot:null,errT:0,rej:0,gain:0,ref:null,ab:[],type:ls.get('rec.type','mountainbikeride')};
 $('#rcType').value=REC.type;
 function recHttps(){ return location.protocol==='https:'||/^(localhost|127\.0\.0\.1)$/.test(location.hostname); }
 if(!recHttps()) setTimeout(()=>recWarn(),0);
@@ -1737,7 +1737,7 @@ async function recStart(){
   REC.type=$('#rcType').value; ls.set('rec.type',REC.type);
   // zuletzt genutzte Rad- bzw. Geh-Art für die Widgets merken
   if(['hike','walk','snowshoe'].includes(REC.type)) ls.set('lastHike',REC.type); else if(['mountainbikeride','emountainbikeride','ebikeride','ride','gravelride'].includes(REC.type)) ls.set('lastBike',REC.type);
-  Object.assign(REC,{on:true,pts:[],t0:Date.now(),dist:0,follow:true,dot:null,rej:0,gain:0,ref:null,ab:[],mv:0,lastMoveT:0,paused:true});
+  Object.assign(REC,{on:true,pts:[],t0:Date.now(),dist:0,follow:true,dot:null,rej:0,gain:0,ref:null,ab:[],mvAcc:0,runFrom:Date.now(),moveT:Date.now(),paused:false});
   hrRecStart();
   recLayer.clearLayers(); selLayer.clearLayers(); TOUR.sel=null; renderTours();
   REC.line=L.polyline([],{pane:'route',interactive:false,color:'#1b7fe8',weight:5,lineJoin:'round',lineCap:'round'}).addTo(recLayer);
@@ -1759,10 +1759,23 @@ async function recStart(){
   sheet.classList.remove('open'); recTick(); REC.tick=setInterval(recTick,1000); widgetPush(true);
 }
 /* Auto-Pause: steht man länger als 20 s (kein GPS-Punkt mit Bewegung), bleibt die Zeit stehen */
-const PAUSE_MS=20000;
-function recMoving(){ const gap=Date.now()-REC.lastMoveT, run=REC.lastMoveT>0&&gap>=0&&gap<=PAUSE_MS; return {paused:!run,ms:REC.mv+(run?gap:0)}; }
-function recTick(){ if(!REC.on) return; const mvs=recMoving();
-  if(mvs.paused!==REC.paused){ REC.paused=mvs.paused; document.body.classList.toggle('rec-paused',REC.paused); widgetPush(true); } else widgetPush();
+/* Auto-Pause. Die Zeit läuft ab dem Start. Jede GPS-Messung, die Bewegung zeigt (vom GPS gemessene
+   Geschwindigkeit ab 0,7 m/s ≈ 2,5 km/h, ersatzweise mind. 4 m Weg mit mehr als 0,5 m/s), hält sie am Laufen.
+   Kommt 20 s lang keine solche Messung, pausiert sie und zählt nur bis zur letzten Bewegung.
+   Die nächste Bewegung setzt sie fort. Grundlage ist die Ankunftszeit der Messung, nicht ihr Zeitstempel. */
+const PAUSE_MS=20000, MOVE_SPEED=0.7;
+function recMoved(){
+  const now=Date.now(); REC.moveT=now;
+  if(REC.paused){ REC.paused=false; REC.runFrom=now; document.body.classList.remove('rec-paused'); widgetPush(true); }
+}
+function recMoving(){
+  const now=Date.now();
+  if(REC.on&&!REC.paused&&now-REC.moveT>PAUSE_MS){
+    REC.mvAcc+=Math.max(0,REC.moveT-REC.runFrom); REC.paused=true; document.body.classList.add('rec-paused'); widgetPush(true);
+  }
+  return {paused:REC.paused, ms:REC.mvAcc+(REC.paused?0:now-REC.runFrom)};
+}
+function recTick(){ if(!REC.on) return; const mvs=recMoving(); widgetPush();
   const h=fmt0.format(REC.gain)+' Hm', d=fmt1.format(REC.dist/1000)+' km', t=fmtClock(mvs.ms/1000)+(REC.paused?' ❚❚':''); $('#rhD').textContent=d; $('#rhT').textContent=t; $('#rhH').textContent=h; $('#rpH').textContent=h; $('#rpD').textContent=d; $('#rpT').textContent=t; hrShow(); }
 function recPos(p){
   if(!REC.on) return;
@@ -1772,15 +1785,17 @@ function recPos(p){
   if(p.timestamp<(REC.tStart||REC.t0)-10000) return;
   if(!NATIVE&&Date.now()-p.timestamp>15000) return;
   const n=[c.latitude,c.longitude,c.altitude==null?null:Math.round(c.altitude*10)/10,p.timestamp], q=REC.pts[REC.pts.length-1];
+  // Bewegung erkannt, wenn das GPS mind. 0,7 m/s misst ODER seit dem letzten Punkt mind. 4 m mit mehr als 0,5 m/s zurückgelegt wurden
+  const sp=typeof c.speed==='number'&&isFinite(c.speed)?c.speed:0;
+  if(sp>=MOVE_SPEED) recMoved();
+  else if(q){ const s0=haversine(q[0],q[1],n[0],n[1]), dt0=(n[3]-q[3])/1000; if(s0>=4&&(dt0<=0||s0/dt0>0.5)) recMoved(); }
   if(q){
     const s=haversine(q[0],q[1],n[0],n[1]), dt=(n[3]-q[3])/1000;
     if(s<4) return;
     // GPS-Sprung (schneller als 35 m/s): ignorieren. Kommen 3 Punkte in Folge so an, war der Bezugspunkt falsch und die Aufnahme setzt hier neu an.
     if(dt>0&&dt<30&&s/dt>35&&REC.rej<3){ REC.rej++; return; }
     REC.rej=0; if(s<600) REC.dist+=s;
-    // Bewegungszeit (Auto-Pause): nur Abschnitte mit mehr als 0,5 m/s und ohne lange Lücke zählen
-    if(dt>0&&s/dt>0.5){ if(dt*1000<=PAUSE_MS) REC.mv+=dt*1000; REC.lastMoveT=n[3]; }
-  } else REC.lastMoveT=0;
+  }
   if(HR.dev){ const h=hrAt(n[3]); if(h) n[4]=h; } // Puls zur Zeit des GPS-Punkts
   REC.pts.push(n);
   if(n[2]!=null){ // Hoehenmeter live: Mittel der letzten 3 Hoehen, Schwelle 4 m gegen GPS-Rauschen
@@ -1814,7 +1829,7 @@ async function recBgPrep(){
 async function recStop(discard){
   try{ navigator.geolocation.clearWatch(REC.watch); }catch(e){} if(NATIVE&&REC.bgId!=null){ try{ await BG.removeWatcher({id:REC.bgId}); }catch(e){} REC.bgId=null; } clearInterval(REC.tick); try{ REC.wl&&REC.wl.release(); }catch(e){}
   const pts=REC.pts, type=REC.type, t0=REC.t0; REC.on=false; REC.pts=[]; REC.dist=0; REC.gain=0; REC.wl=null; widgetPush(true); hrRecStop();
-  document.body.classList.remove('recording','rec-paused'); recUI(); $('#recHud').hidden=true; $('#navHud').hidden=true; NAV.idx=0;
+  REC.paused=false; document.body.classList.remove('recording','rec-paused'); recUI(); $('#recHud').hidden=true; $('#navHud').hidden=true; NAV.idx=0;
   if(!ME.on){ meHide(); compassStop(); } recLayer.clearLayers(); ls.set('rec',null);
   if(!discard) await saveRecording(pts,type,t0);
 }
