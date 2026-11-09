@@ -34,7 +34,13 @@ body{background:var(--bg);color:var(--ink);font:15px/1.45 var(--f-body);-webkit-
 button{font:inherit;color:inherit}
 button:focus-visible,input:focus-visible,label:focus-within{outline:2px solid var(--sign);outline-offset:2px}
 
-#map{position:fixed;top:0;left:0;right:0;bottom:var(--peek);background:var(--bg)}
+#mapBox{position:fixed;top:0;left:0;right:0;bottom:var(--peek);background:var(--bg);overflow:hidden}
+#map{position:absolute;inset:0;background:var(--bg)}
+.rotmap #map{transition:transform .45s linear}
+.rotmap .leaflet-popup,.rotmap .leaflet-tooltip{rotate:var(--rot);transform-origin:50% 100%}
+.rotmap .leaflet-marker-icon:not(.me-mk){rotate:var(--rot)}
+.rot-btn svg .n{fill:#d32f2f}.rot-btn svg .s{fill:#9aa3aa}.rot-btn svg text{font:700 5px sans-serif;fill:#d32f2f;stroke:none}
+.rot-btn svg{transition:transform .45s linear}.rot-btn:not(.on){opacity:.75}
 .leaflet-container{font-family:var(--f-body)}
 .leaflet-top{top:env(safe-area-inset-top,0px)}
 .leaflet-right{right:env(safe-area-inset-right,0px)}
@@ -77,7 +83,7 @@ button:focus-visible,input:focus-visible,label:focus-within{outline:2px solid va
 .pane{padding-block:14px 22px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:20px}
 
 @media (min-width:900px){
-  #map{right:var(--side);bottom:0}
+  #mapBox{right:var(--side);bottom:0}
   #sheet{top:0;left:auto;width:var(--side);border-radius:0;border-top:0;border-left:1px solid var(--line);box-shadow:none;padding-top:env(safe-area-inset-top,0px)}
   .handle{display:none}
   .summary{padding-top:16px}
@@ -286,7 +292,7 @@ canvas.prof{width:100%;height:120px;display:block}
 </style>
 </head>
 <body>
-<div id="map" role="application" aria-label="Karte"></div>
+<div id="mapBox"><div id="map" role="application" aria-label="Karte"></div></div>
 
 <div class="brand">
   <div class="sign">Trail Log</div>
@@ -1453,6 +1459,7 @@ function meShow(lat,lon,acc,gpsHeading,speed){
 function meHead(){
   // GPS-Kurs der letzten 5 s hat Vorrang (Kompass am Lenker ist unzuverlässig), sonst Kompass
   const h=Date.now()-ME.gpsT<5000?ME.gpsHead:ME.compass;
+  if(typeof REC!=='undefined'&&REC.on&&typeof ROT!=='undefined') rotHeading(h);
   const c=ME.m&&ME.m.getElement()&&ME.m.getElement().querySelector('.me-cone'); if(!c) return;
   if(h==null){ c.style.opacity='0'; return; }
   // fortlaufender Winkel, damit die Animation von 359° auf 1° den kurzen Weg nimmt
@@ -1519,6 +1526,77 @@ const LocCtl=L.Control.extend({options:{position:'topright'},
     L.DomEvent.on(b,'click',()=>{ if(ME.on&&ME.ll&&!map.getBounds().pad(-0.2).contains(ME.ll)) map.panTo(ME.ll); else if(ME.on) locOff(); else locOn(); });
     return b; }});
 const locBtn=new LocCtl().addTo(map).getContainer();
+/* ---------- Karte in Fahrtrichtung drehen (während der Aufnahme) ----------
+   Leaflet kann nicht drehen. Deshalb wird der Kartencontainer zu einem Quadrat mit der Bildschirmdiagonale
+   vergrößert, mittig in #mapBox gesetzt und per CSS gedreht: so drehen alle Ebenen mit und es bleiben keine
+   leeren Ecken. Knöpfe liegen außerhalb (unverdreht), Popups und Symbole werden gegengedreht.
+   Die Offline-Karte (MapLibre) zeichnet selbst gedreht (bearing), ihr Canvas wird gegengedreht: Schriften bleiben aufrecht.
+   Finger-Eingaben (Ziehen, Tippen, Zoomen) werden in die gedrehte Karte umgerechnet. */
+const ROT={on:false,deg:0,want:ls.get('headUp',true),last:0};
+const mapBox=$('#mapBox'), mapEl=$('#map');
+// Knöpfe aus dem drehenden Container herausnehmen
+(()=>{ const cc=mapEl.querySelector('.leaflet-control-container'); if(cc) mapBox.appendChild(cc);
+  mapBox.classList.add('leaflet-container',...[...mapEl.classList].filter(c=>/^leaflet-(touch|retina|safari)/.test(c))); })();
+function rotLayout(){
+  if(!ROT.on){ mapEl.style.cssText=''; return; }
+  const W=mapBox.clientWidth, H=mapBox.clientHeight, D=Math.ceil(Math.hypot(W,H))+2;
+  Object.assign(mapEl.style,{position:'absolute',width:D+'px',height:D+'px',left:((W-D)/2)+'px',top:((H-D)/2)+'px',right:'auto',bottom:'auto'});
+}
+function rotApply(){
+  mapEl.style.transform=ROT.on?`rotate(${(-ROT.deg).toFixed(1)}deg)`:'';
+  mapBox.style.setProperty('--rot',(ROT.on?ROT.deg:0).toFixed(1)+'deg');
+  const n=$('#rotNeedle'); if(n) n.style.transform=`rotate(${(ROT.on?-ROT.deg:0).toFixed(1)}deg)`;
+  // Offline-Karte: selbst gedreht zeichnen, Canvas gegendrehen
+  const gm=typeof curBase!=='undefined'&&curBase&&curBase.getMaplibreMap&&curBase.getMaplibreMap();
+  if(gm){ const b=((ROT.on?ROT.deg:0)%360+360)%360, gc=gm.getContainer(), cc=gm.getCanvasContainer();
+    gm.setBearing(b);
+    // Drehpunkt ausdrücklich in die Mitte der Kartenfläche (der Canvas-Container selbst hat keine Größe)
+    cc.style.transformOrigin=`${gc.clientWidth/2}px ${gc.clientHeight/2}px`;
+    cc.style.transform=ROT.on?`rotate(${b.toFixed(1)}deg)`:''; }
+}
+function rotSet(on){
+  on=!!on; if(on===ROT.on) return;
+  const c=map.getCenter(); ROT.on=on; document.body.classList.toggle('rotmap',on);
+  if(!on) ROT.deg=0;
+  rotLayout(); map.invalidateSize({pan:false}); map.setView(c,map.getZoom(),{animate:false}); rotApply();
+}
+// Richtung: GPS-Kurs beim Fahren (ruhig), sonst Kompass. Fortlaufender Winkel für kurze Drehwege.
+function rotHeading(h){
+  if(!ROT.on||h==null||!isFinite(h)) return;
+  const now=Date.now(); let d=((h-ROT.deg%360+540)%360)-180;
+  if(Math.abs(d)<4||now-ROT.last<300) return; // kleine Zitterbewegungen und zu häufiges Drehen vermeiden
+  ROT.deg+=d; ROT.last=now; rotApply();
+}
+function rotUpdate(){ // an/aus je nach Aufnahme und Einstellung
+  const should=REC.on&&ROT.want; rotSet(should); $('#rotBtn').hidden=!REC.on; rotBtnUI();
+}
+function rotBtnUI(){ const b=$('#rotBtn'); if(!b) return; b.classList.toggle('on',ROT.want); b.title=ROT.want?'Karte in Fahrtrichtung (antippen: Norden oben)':'Norden oben (antippen: in Fahrtrichtung drehen)'; b.setAttribute('aria-label',b.title); }
+window.addEventListener('resize',()=>{ if(ROT.on){ const c=map.getCenter(); rotLayout(); map.invalidateSize({pan:false}); map.setView(c,map.getZoom(),{animate:false}); } });
+// Eingaben in die gedrehte Karte umrechnen
+const _m2c=map.mouseEventToContainerPoint.bind(map);
+map.mouseEventToContainerPoint=function(e){
+  if(!ROT.on) return _m2c(e);
+  const r=mapBox.getBoundingClientRect(), x=e.clientX-(r.left+r.width/2), y=e.clientY-(r.top+r.height/2), t=ROT.deg*D2R, s=this.getSize();
+  return L.point(x*Math.cos(t)-y*Math.sin(t)+s.x/2, x*Math.sin(t)+y*Math.cos(t)+s.y/2);
+};
+const _dragMove=L.Draggable.prototype._onMove;
+L.Draggable.prototype._onMove=function(e){
+  if(!ROT.on||this._element!==map._mapPane||!this._startPoint||(e.touches&&e.touches.length>1)) return _dragMove.call(this,e);
+  const f=e.touches&&e.touches.length===1?e.touches[0]:e, dx=f.clientX-this._startPoint.x, dy=f.clientY-this._startPoint.y, t=ROT.deg*D2R;
+  const x=this._startPoint.x+dx*Math.cos(t)-dy*Math.sin(t), y=this._startPoint.y+dx*Math.sin(t)+dy*Math.cos(t);
+  this._parentScale={x:1,y:1,boundingClientRect:mapEl.getBoundingClientRect()};
+  return _dragMove.call(this,{_simulated:e._simulated,clientX:x,clientY:y,target:e.target,srcElement:e.srcElement,type:e.type,preventDefault:()=>e.preventDefault&&e.preventDefault()});
+};
+// Kompass-Knopf: zeigt Norden, schaltet zwischen „Fahrtrichtung oben“ und „Norden oben“
+const RotCtl=L.Control.extend({options:{position:'topright'},
+  onAdd(){ const b=L.DomUtil.create('button','export-btn rot-btn'); b.type='button'; b.id='rotBtn'; b.hidden=true;
+    b.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true" id="rotNeedle"><path d="M12 3l3.5 9h-7z" class="n"/><path d="M12 21l-3.5-9h7z" class="s"/><text x="12" y="2.6" text-anchor="middle">N</text></svg>';
+    L.DomEvent.disableClickPropagation(b);
+    L.DomEvent.on(b,'click',()=>{ ROT.want=!ROT.want; ls.set('headUp',ROT.want); rotUpdate(); toast(ROT.want?'Karte dreht sich in Fahrtrichtung.':'Norden oben.'); });
+    return b; }});
+new RotCtl().addTo(map);
+rotBtnUI();
+
 
 
 /* ================================================================
@@ -1755,7 +1833,7 @@ async function recStart(){
     }catch(e){ toast('Aufzeichnung konnte nicht starten: '+String(e&&e.message||e).slice(0,120),8000); recStop(true); return; }
   } else REC.watch=navigator.geolocation.watchPosition(recPos,recErr,{enableHighAccuracy:true,maximumAge:1000,timeout:30000});
   REC.t0=Date.now();
-  document.body.classList.add('recording'); recUI(); $('#recHud').hidden=false; $('#rhFollow').hidden=true;
+  document.body.classList.add('recording'); recUI(); rotUpdate(); $('#recHud').hidden=false; $('#rhFollow').hidden=true;
   sheet.classList.remove('open'); recTick(); REC.tick=setInterval(recTick,1000); widgetPush(true);
 }
 /* Auto-Pause: steht man länger als 20 s (kein GPS-Punkt mit Bewegung), bleibt die Zeit stehen */
@@ -1829,7 +1907,7 @@ async function recBgPrep(){
 async function recStop(discard){
   try{ navigator.geolocation.clearWatch(REC.watch); }catch(e){} if(NATIVE&&REC.bgId!=null){ try{ await BG.removeWatcher({id:REC.bgId}); }catch(e){} REC.bgId=null; } clearInterval(REC.tick); try{ REC.wl&&REC.wl.release(); }catch(e){}
   const pts=REC.pts, type=REC.type, t0=REC.t0; REC.on=false; REC.pts=[]; REC.dist=0; REC.gain=0; REC.wl=null; widgetPush(true); hrRecStop();
-  REC.paused=false; document.body.classList.remove('recording','rec-paused'); recUI(); $('#recHud').hidden=true; $('#navHud').hidden=true; NAV.idx=0;
+  REC.paused=false; document.body.classList.remove('recording','rec-paused'); recUI(); rotUpdate(); $('#recHud').hidden=true; $('#navHud').hidden=true; NAV.idx=0;
   if(!ME.on){ meHide(); compassStop(); } recLayer.clearLayers(); ls.set('rec',null);
   if(!discard) await saveRecording(pts,type,t0);
 }
@@ -2255,6 +2333,7 @@ async function mtbAttach(){
   else{
     if(curBase){ map.removeLayer(curBase); }
     curBase=L.maplibreGL({style:mtbStyle(K.srcKey),interactive:false,attributionControl:{customAttribution:K_ATTR}}).addTo(map);
+    if(ROT.on) setTimeout(rotApply,0);
   }
   mtbChipUpdate(q.m); applyLook();
 }
