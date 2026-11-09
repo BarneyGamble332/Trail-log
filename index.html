@@ -1840,7 +1840,8 @@ const HRS='0000180d-0000-1000-8000-00805f9b34fb', HRM='00002a37-0000-1000-8000-0
 const HR={dev:ls.get('hr.dev',null),bpm:0,t:0,bat:null,conn:false,want:false,busy:false,hist:[],init:false,retry:null};
 const blePlug=()=>NATIVE?nativePlugin('BluetoothLe'):null;
 const hexBytes=v=>{ if(v==null) return [];
-  if(typeof v==='string') return v.trim().split(/\s+/).filter(Boolean).map(h=>parseInt(h,16));
+  // Das Plugin liefert die Bytes als Hex-Zeichenkette, je nach Version mit oder ohne Leerzeichen ("168e" oder "16 8e")
+  if(typeof v==='string'){ const h=v.replace(/[^0-9a-f]/gi,''), b=[]; for(let i=0;i+1<h.length;i+=2) b.push(parseInt(h.slice(i,i+2),16)); return b; }
   if(v instanceof DataView) return Array.from(new Uint8Array(v.buffer,v.byteOffset,v.byteLength));
   if(Array.isArray(v)) return v; return []; };
 function hrParse(b){ if(b.length<2) return 0; return (b[0]&1)?(b[1]|(b[2]<<8)):b[1]; }
