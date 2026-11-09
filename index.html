@@ -280,6 +280,8 @@ canvas.prof{width:100%;height:120px;display:block}
 .nav-arrow i{display:block;width:0;height:0;margin:2px auto 0;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:11px solid #c2185b;filter:drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 1px #fff)}
 .rec-hud button.ic{padding:8px 10px;font-size:16px}
 @keyframes pulse{50%{opacity:.3}}
+.rec-paused .rec-hud .rdot,.rec-paused .rec-big .rdot{background:#f2a33a;animation:none;border-radius:2px}
+.rec-pz{color:#f2a33a;font-size:.7em;letter-spacing:.06em}
 @media (prefers-reduced-motion:reduce){.rec-hud .rdot{animation:none}.chart i{animation:none}}
 </style>
 </head>
@@ -1696,7 +1698,7 @@ $('#rcGo').onclick=recStart;
 /* Stopp fragt nach: wirklich beenden oder weiter aufzeichnen (Aufnahme läuft währenddessen weiter) */
 function stopAsk(){
   if(!REC.on) return;
-  $('#stopInfo').textContent=`${fmtClock((Date.now()-REC.t0)/1000)} · ${fmt1.format(REC.dist/1000)} km · ${fmt0.format(REC.gain)} Hm`;
+  $('#stopInfo').textContent=`${fmtClock(recMoving().ms/1000)} in Bewegung · ${fmt1.format(REC.dist/1000)} km · ${fmt0.format(REC.gain)} Hm`;
   $('#stopDlg').hidden=false;
 }
 $('#stopGoOn').onclick=()=>{ $('#stopDlg').hidden=true; };
@@ -1718,7 +1720,7 @@ function nativePlugin(name){
 }
 let BG=null;
 if(NATIVE){ BG=nativePlugin('BackgroundGeolocation'); }
-const REC={bgId:null,on:false,pts:[],t0:0,dist:0,watch:null,wl:null,tick:null,follow:true,line:null,dot:null,errT:0,rej:0,gain:0,ref:null,ab:[],type:ls.get('rec.type','mountainbikeride')};
+const REC={mv:0,lastMoveT:0,paused:false,bgId:null,on:false,pts:[],t0:0,dist:0,watch:null,wl:null,tick:null,follow:true,line:null,dot:null,errT:0,rej:0,gain:0,ref:null,ab:[],type:ls.get('rec.type','mountainbikeride')};
 $('#rcType').value=REC.type;
 function recHttps(){ return location.protocol==='https:'||/^(localhost|127\.0\.0\.1)$/.test(location.hostname); }
 if(!recHttps()) setTimeout(()=>recWarn(),0);
@@ -1735,7 +1737,7 @@ async function recStart(){
   REC.type=$('#rcType').value; ls.set('rec.type',REC.type);
   // zuletzt genutzte Rad- bzw. Geh-Art für die Widgets merken
   if(['hike','walk','snowshoe'].includes(REC.type)) ls.set('lastHike',REC.type); else if(['mountainbikeride','emountainbikeride','ebikeride','ride','gravelride'].includes(REC.type)) ls.set('lastBike',REC.type);
-  Object.assign(REC,{on:true,pts:[],t0:Date.now(),dist:0,follow:true,dot:null,rej:0,gain:0,ref:null,ab:[]});
+  Object.assign(REC,{on:true,pts:[],t0:Date.now(),dist:0,follow:true,dot:null,rej:0,gain:0,ref:null,ab:[],mv:0,lastMoveT:0,paused:true});
   hrRecStart();
   recLayer.clearLayers(); selLayer.clearLayers(); TOUR.sel=null; renderTours();
   REC.line=L.polyline([],{pane:'route',interactive:false,color:'#1b7fe8',weight:5,lineJoin:'round',lineCap:'round'}).addTo(recLayer);
@@ -1756,7 +1758,12 @@ async function recStart(){
   document.body.classList.add('recording'); recUI(); $('#recHud').hidden=false; $('#rhFollow').hidden=true;
   sheet.classList.remove('open'); recTick(); REC.tick=setInterval(recTick,1000); widgetPush(true);
 }
-function recTick(){ if(!REC.on) return; widgetPush(); const h=fmt0.format(REC.gain)+' Hm', d=fmt1.format(REC.dist/1000)+' km', t=fmtClock((Date.now()-REC.t0)/1000); $('#rhD').textContent=d; $('#rhT').textContent=t; $('#rhH').textContent=h; $('#rpH').textContent=h; $('#rpD').textContent=d; $('#rpT').textContent=t; hrShow(); }
+/* Auto-Pause: steht man länger als 20 s (kein GPS-Punkt mit Bewegung), bleibt die Zeit stehen */
+const PAUSE_MS=20000;
+function recMoving(){ const gap=Date.now()-REC.lastMoveT, run=REC.lastMoveT>0&&gap>=0&&gap<=PAUSE_MS; return {paused:!run,ms:REC.mv+(run?gap:0)}; }
+function recTick(){ if(!REC.on) return; const mvs=recMoving();
+  if(mvs.paused!==REC.paused){ REC.paused=mvs.paused; document.body.classList.toggle('rec-paused',REC.paused); widgetPush(true); } else widgetPush();
+  const h=fmt0.format(REC.gain)+' Hm', d=fmt1.format(REC.dist/1000)+' km', t=fmtClock(mvs.ms/1000)+(REC.paused?' ❚❚':''); $('#rhD').textContent=d; $('#rhT').textContent=t; $('#rhH').textContent=h; $('#rpH').textContent=h; $('#rpD').textContent=d; $('#rpT').textContent=t; hrShow(); }
 function recPos(p){
   if(!REC.on) return;
   const c=p.coords; if(c.accuracy>40) return;
@@ -1771,7 +1778,9 @@ function recPos(p){
     // GPS-Sprung (schneller als 35 m/s): ignorieren. Kommen 3 Punkte in Folge so an, war der Bezugspunkt falsch und die Aufnahme setzt hier neu an.
     if(dt>0&&dt<30&&s/dt>35&&REC.rej<3){ REC.rej++; return; }
     REC.rej=0; if(s<600) REC.dist+=s;
-  }
+    // Bewegungszeit (Auto-Pause): nur Abschnitte mit mehr als 0,5 m/s und ohne lange Lücke zählen
+    if(dt>0&&s/dt>0.5){ if(dt*1000<=PAUSE_MS) REC.mv+=dt*1000; REC.lastMoveT=n[3]; }
+  } else REC.lastMoveT=0;
   if(HR.dev){ const h=hrAt(n[3]); if(h) n[4]=h; } // Puls zur Zeit des GPS-Punkts
   REC.pts.push(n);
   if(n[2]!=null){ // Hoehenmeter live: Mittel der letzten 3 Hoehen, Schwelle 4 m gegen GPS-Rauschen
@@ -1805,7 +1814,7 @@ async function recBgPrep(){
 async function recStop(discard){
   try{ navigator.geolocation.clearWatch(REC.watch); }catch(e){} if(NATIVE&&REC.bgId!=null){ try{ await BG.removeWatcher({id:REC.bgId}); }catch(e){} REC.bgId=null; } clearInterval(REC.tick); try{ REC.wl&&REC.wl.release(); }catch(e){}
   const pts=REC.pts, type=REC.type, t0=REC.t0; REC.on=false; REC.pts=[]; REC.dist=0; REC.gain=0; REC.wl=null; widgetPush(true); hrRecStop();
-  document.body.classList.remove('recording'); recUI(); $('#recHud').hidden=true; $('#navHud').hidden=true; NAV.idx=0;
+  document.body.classList.remove('recording','rec-paused'); recUI(); $('#recHud').hidden=true; $('#navHud').hidden=true; NAV.idx=0;
   if(!ME.on){ meHide(); compassStop(); } recLayer.clearLayers(); ls.set('rec',null);
   if(!discard) await saveRecording(pts,type,t0);
 }
@@ -2046,7 +2055,7 @@ function widgetPush(force,raw){
     const HIKE=new Set(['hike','walk','snowshoe']), hdays={};
     for(const x of S.acts){ const t=typeKey(x.t); if(x.d<from||!HIKE.has(t)) continue; const k=key(new Date(x.d)), v=hdays[k]||(hdays[k]=[0,0,0]);
       v[0]++; v[1]=Math.round((v[1]+x.dist/1000)*100)/100; v[2]+=Math.round(x.gain||0); }
-    const pr=Promise.resolve(TW.update({running:!!REC.on,start:REC.t0||0,hr:REC.on&&hrLive()?String(hrLive()):'',dist:fmt1.format((REC.dist||0)/1000),gain:fmt0.format(REC.gain||0),m:mon,mt,mk,mh,days:JSON.stringify(days),hdays:JSON.stringify(hdays)}));
+    const pr=Promise.resolve(TW.update({running:!!REC.on,start:REC.t0||0,mv:REC.on?Math.round(recMoving().ms):-1,paused:!!(REC.on&&recMoving().paused),hr:REC.on&&hrLive()?String(hrLive()):'',dist:fmt1.format((REC.dist||0)/1000),gain:fmt0.format(REC.gain||0),m:mon,mt,mk,mh,days:JSON.stringify(days),hdays:JSON.stringify(hdays)}));
     if(raw) return pr;
     pr.catch(e=>{ if(!widgetPush.err){ widgetPush.err=1; toast('Widget: '+String(e&&e.message||e).slice(0,100),6000); } });
   }catch(e){}

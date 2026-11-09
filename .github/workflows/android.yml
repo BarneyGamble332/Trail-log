@@ -242,6 +242,7 @@ jobs:
                   // getDouble() liefert bei grossen ganzen Zahlen (Millisekunden) den Standardwert 0, daher optLong
                   long start = call.getData().optLong("start", 0L);
                   TrailWidgetProvider.saveHr(getContext(), call.getString("hr", ""));
+                  TrailWidgetProvider.saveMove(getContext(), call.getData().optLong("mv", -1L), call.getBoolean("paused", false));
                   TrailWidgetProvider.save(getContext(), running, start,
                       call.getString("dist", "0,0"), call.getString("gain", "0"),
                       call.getString("m", ""), call.getString("mt", "–"),
@@ -579,6 +580,12 @@ jobs:
           public class TrailWidgetProvider extends AppWidgetProvider {
               static final String PREF = "tlwidget";
 
+              /* Bewegungszeit (ms) zum Zeitpunkt des Updates und ob gerade pausiert ist (Auto-Pause) */
+              static void saveMove(Context c, long mv, boolean paused) {
+                  c.getSharedPreferences(PREF, Context.MODE_PRIVATE).edit()
+                      .putLong("mv", mv).putLong("mvAt", System.currentTimeMillis()).putBoolean("paused", paused).apply();
+              }
+
               static void saveHr(Context c, String hr) {
                   c.getSharedPreferences(PREF, Context.MODE_PRIVATE).edit().putString("hr", hr == null ? "" : hr).apply();
               }
@@ -674,11 +681,14 @@ jobs:
                       v.setViewVisibility(R.id.w_start, View.GONE);
                       v.setViewVisibility(R.id.w_stop, View.VISIBLE);
                       v.setViewVisibility(R.id.w_head, View.VISIBLE);
-                      v.setTextViewText(R.id.w_head, "\u25CF  AUFNAHME L\u00C4UFT");
-                      v.setTextColor(R.id.w_head, 0xFFFF6B5B);
+                      boolean paused = p.getBoolean("paused", false);
+                      v.setTextViewText(R.id.w_head, paused ? "\u275A\u275A  PAUSIERT" : "\u25CF  AUFNAHME L\u00C4UFT");
+                      v.setTextColor(R.id.w_head, paused ? 0xFFF2A33A : 0xFFFF6B5B);
                       long start = p.getLong("start", now);
-                      long elapsed = Math.max(0, now - start);
-                      v.setChronometer(R.id.w_time, SystemClock.elapsedRealtime() - elapsed, null, true);
+                      long mv = p.getLong("mv", -1L), mvAt = p.getLong("mvAt", now);
+                      // Bewegungszeit: läuft nur weiter, solange nicht pausiert
+                      long shown = mv >= 0 ? mv + (paused ? 0 : Math.max(0, now - mvAt)) : Math.max(0, now - start);
+                      v.setChronometer(R.id.w_time, SystemClock.elapsedRealtime() - shown, null, !paused);
                       v.setTextViewText(R.id.w_dist, p.getString("dist", "0,0"));
                       v.setTextViewText(R.id.w_gain, p.getString("gain", "0"));
                       String hr = p.getString("hr", "");
@@ -739,7 +749,8 @@ jobs:
 
                   <TextView
                       android:id="@+id/w_head"
-                      android:layout_width="wrap_content"
+                      android:layout_width="match_parent"
+                      android:gravity="center_horizontal"
                       android:layout_height="wrap_content"
                       android:includeFontPadding="false"
                       android:letterSpacing="0.12"
@@ -1101,98 +1112,129 @@ jobs:
 
                   <LinearLayout
                       android:id="@+id/w_run"
-                      android:layout_width="wrap_content"
-                      android:layout_height="wrap_content"
+                      android:layout_width="match_parent"
+                      android:layout_height="0dp"
+                      android:layout_weight="1"
                       android:orientation="vertical"
                       android:visibility="gone">
-
                       <Chronometer
                           android:id="@+id/w_time"
-                          android:layout_width="wrap_content"
-                          android:layout_height="wrap_content"
+                          android:layout_width="match_parent"
+                          android:layout_height="0dp"
+                          android:layout_weight="1.15"
+                          android:autoSizeMaxTextSize="72sp"
+                          android:autoSizeMinTextSize="20sp"
+                          android:autoSizeStepGranularity="1sp"
+                          android:autoSizeTextType="uniform"
                           android:fontFamily="sans-serif-medium"
+                          android:gravity="center"
                           android:includeFontPadding="false"
+                          android:maxLines="1"
                           android:textColor="#FFFFFF"
-                          android:textSize="34sp" />
-
+                          android:textSize="40sp" />
                       <LinearLayout
-                          android:layout_width="wrap_content"
-                          android:layout_height="wrap_content"
-                          android:layout_marginTop="4dp"
+                          android:layout_width="match_parent"
+                          android:layout_height="0dp"
+                          android:layout_weight="1"
+                          android:layout_marginTop="2dp"
                           android:orientation="horizontal">
                       <LinearLayout
-                          android:layout_width="wrap_content"
-                          android:layout_height="wrap_content"
-                          android:layout_marginEnd="18dp"
+                          android:layout_width="0dp"
+                          android:layout_height="match_parent"
+                          android:layout_weight="1"
+                          android:gravity="center_horizontal"
                           android:orientation="vertical">
                           <TextView
                               android:id="@+id/w_dist"
-                              android:layout_width="wrap_content"
-                              android:layout_height="wrap_content"
+                              android:layout_width="match_parent"
+                              android:layout_height="0dp"
+                              android:layout_weight="1"
+                              android:autoSizeMaxTextSize="52sp"
+                              android:autoSizeMinTextSize="16sp"
+                              android:autoSizeStepGranularity="1sp"
+                              android:autoSizeTextType="uniform"
                               android:fontFamily="sans-serif-medium"
+                              android:gravity="center"
                               android:includeFontPadding="false"
+                              android:maxLines="1"
                               android:text="0"
                               android:textColor="#F4F6F7"
-                              android:textSize="26sp" />
+                              android:textSize="30sp" />
                           <TextView
                               android:layout_width="wrap_content"
                               android:layout_height="wrap_content"
-                              android:layout_marginTop="2dp"
+                              android:layout_marginTop="1dp"
                               android:includeFontPadding="false"
                               android:letterSpacing="0.08"
                               android:text="KM"
                               android:textColor="#8E99A1"
-                              android:textSize="10sp" />
+                              android:textSize="11sp" />
                       </LinearLayout>
                       <LinearLayout
-                          android:layout_width="wrap_content"
-                          android:layout_height="wrap_content"
-                          android:layout_marginEnd="18dp"
+                          android:layout_width="0dp"
+                          android:layout_height="match_parent"
+                          android:layout_weight="1"
+                          android:gravity="center_horizontal"
                           android:orientation="vertical">
                           <TextView
                               android:id="@+id/w_gain"
-                              android:layout_width="wrap_content"
-                              android:layout_height="wrap_content"
+                              android:layout_width="match_parent"
+                              android:layout_height="0dp"
+                              android:layout_weight="1"
+                              android:autoSizeMaxTextSize="52sp"
+                              android:autoSizeMinTextSize="16sp"
+                              android:autoSizeStepGranularity="1sp"
+                              android:autoSizeTextType="uniform"
                               android:fontFamily="sans-serif-medium"
+                              android:gravity="center"
                               android:includeFontPadding="false"
+                              android:maxLines="1"
                               android:text="0"
                               android:textColor="#F4F6F7"
-                              android:textSize="26sp" />
+                              android:textSize="30sp" />
                           <TextView
                               android:layout_width="wrap_content"
                               android:layout_height="wrap_content"
-                              android:layout_marginTop="2dp"
+                              android:layout_marginTop="1dp"
                               android:includeFontPadding="false"
                               android:letterSpacing="0.08"
                               android:text="HM"
                               android:textColor="#8E99A1"
-                              android:textSize="10sp" />
+                              android:textSize="11sp" />
                       </LinearLayout>
                       <LinearLayout
                           android:id="@+id/w_hrbox"
-                          android:layout_width="wrap_content"
-                          android:layout_height="wrap_content"
-                          android:layout_marginEnd="18dp"
+                          android:layout_width="0dp"
+                          android:layout_height="match_parent"
+                          android:layout_weight="1"
+                          android:gravity="center_horizontal"
                           android:orientation="vertical"
                           android:visibility="gone">
                           <TextView
                               android:id="@+id/w_hr"
-                              android:layout_width="wrap_content"
-                              android:layout_height="wrap_content"
+                              android:layout_width="match_parent"
+                              android:layout_height="0dp"
+                              android:layout_weight="1"
+                              android:autoSizeMaxTextSize="52sp"
+                              android:autoSizeMinTextSize="16sp"
+                              android:autoSizeStepGranularity="1sp"
+                              android:autoSizeTextType="uniform"
                               android:fontFamily="sans-serif-medium"
+                              android:gravity="center"
                               android:includeFontPadding="false"
+                              android:maxLines="1"
                               android:text="0"
                               android:textColor="#FF8A80"
-                              android:textSize="26sp" />
+                              android:textSize="30sp" />
                           <TextView
                               android:layout_width="wrap_content"
                               android:layout_height="wrap_content"
-                              android:layout_marginTop="2dp"
+                              android:layout_marginTop="1dp"
                               android:includeFontPadding="false"
                               android:letterSpacing="0.08"
                               android:text="♥ PULS"
                               android:textColor="#8E99A1"
-                              android:textSize="10sp" />
+                              android:textSize="11sp" />
                       </LinearLayout>
                       </LinearLayout>
                   </LinearLayout>
