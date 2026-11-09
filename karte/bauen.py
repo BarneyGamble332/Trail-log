@@ -62,23 +62,6 @@ def circle(lat0, lon0, radius_km, n=180):
     return pts
 
 
-def to_gpkg(gj, dst, layer):
-    """GeoJSON -> GeoPackage für Planetiler. Ohne Daten wird ein leerer Platzhalter (weit außerhalb) geschrieben."""
-    if os.path.exists(dst):
-        os.remove(dst)
-    ok = False
-    if gj and os.path.exists(gj):
-        with open(gj) as f:
-            ok = '"Feature"' in f.read(200000)
-    if not ok:
-        gj = dst + '.leer.geojson'
-        with open(gj, 'w') as f:
-            json.dump({'type': 'FeatureCollection', 'features': [{'type': 'Feature', 'properties': {'leer': 1},
-                       'geometry': {'type': 'LineString', 'coordinates': [[0, 0], [0.001, 0]]}}]}, f)
-    sh('ogr2ogr', '-f', 'GPKG', dst, gj, '-nln', layer, '-nlt', 'LINESTRING', '-a_srs', 'EPSG:4326')
-    return dst
-
-
 def pmtiles_header(path):
     with open(path, 'rb') as f:
         h = f.read(127)
@@ -123,17 +106,6 @@ def build(region):
         sh('osmium', 'merge', *parts, '-o', osm, '--overwrite')
     print(f'   OSM: {os.path.getsize(osm) / 1e6:.0f} MB', flush=True)
 
-    # 1b) Radrouten (Fernradwege, Bayernnetz für Radler) und wahrscheinliche Forstwege (ATKIS Bayern)
-    extra = {}
-    for key, script, args in (('radrouten', 'radrouten.py', [osm]), ('forstwege', 'atkis.py', [osm, poly])):
-        gj = os.path.join(rdir, key + '.geojson')
-        try:
-            sh(sys.executable, os.path.join(ROOT, 'karte', script), *args, gj)
-        except subprocess.CalledProcessError as e:
-            print(f'   {key} fehlgeschlagen ({e}), Karte wird ohne gebaut', flush=True)
-            gj = None
-        extra[key] = to_gpkg(gj, os.path.join(rdir, key + '.gpkg'), key)
-
     # 2) Höhenlinien
     tifs = []
     for la in range(math.floor(s), math.floor(n) + 1):
@@ -176,8 +148,6 @@ def build(region):
        '--osm_path=' + osm,
        '--contours_major=' + outs['major'],
        '--contours_minor=' + outs['minor'],
-       '--radrouten=' + extra['radrouten'],
-       '--forstwege=' + extra['forstwege'],
        '--output=' + pm,
        f'--bounds={w},{s},{e},{n}',
        '--tmpdir=' + os.path.join(rdir, 'tmp'),

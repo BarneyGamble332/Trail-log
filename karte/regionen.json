@@ -3,29 +3,12 @@
     "id": "muc-ibk",
     "name": "München – Innsbruck",
     "beschreibung": "Kreis mit 100 km Radius zwischen München und Innsbruck",
-    "center": [
-      47.703,
-      11.49
-    ],
+    "center": [47.703, 11.490],
     "radius_km": 100,
     "osm": [
       "europe/germany/bayern",
       "europe/austria",
       "europe/italy/nord-est"
-    ]
-  },
-  {
-    "id": "vorschau-gap",
-    "name": "Vorschau neue Karte (Garmisch)",
-    "beschreibung": "Probestück 15 km um Garmisch-Partenkirchen mit Radrouten und Forstweg-Erkennung",
-    "center": [
-      47.492,
-      11.095
-    ],
-    "radius_km": 15,
-    "osm": [
-      "europe/germany/bayern",
-      "europe/austria"
     ]
   }
 ]

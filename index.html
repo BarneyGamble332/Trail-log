@@ -153,11 +153,6 @@ details summary{cursor:pointer;font-weight:600;padding:4px 0}
 .stack{display:flex;flex-direction:column;gap:8px}
 ol.how{margin:0;padding-left:20px;color:var(--muted);font-size:14px;display:flex;flex-direction:column;gap:4px}
 .mtbrow{margin-top:12px}
-.legend .lg-cyc{background:rgba(216,27,96,.35)!important;height:8px!important}
-.legend .lg-fw{background:#fff6e6!important;box-shadow:inset 0 0 0 1.5px #8a5a2b}
-.legend .lg-fw2{background:repeating-linear-gradient(90deg,#8a5a2b 0 5px,transparent 5px 7px)!important}
-.legend .lg-fw3{background:repeating-linear-gradient(90deg,#8a5a2b 0 2px,transparent 2px 4px)!important}
-.legend .lg-path{background:repeating-linear-gradient(90deg,#c62828 0 4px,transparent 4px 7px)!important;height:2px!important}
 .legend{display:flex;flex-wrap:wrap;gap:6px 12px;font:500 13px/1 var(--f-body);color:var(--muted);margin:6px 0 8px}
 .legend i{display:inline-block;width:18px;height:5px;border-radius:3px;margin-right:5px;vertical-align:middle}
 .legend i.dash{height:0;border-top:2px dashed #3b3a36;border-radius:0}
@@ -371,12 +366,10 @@ canvas.prof{width:100%;height:120px;display:block}
         <div id="mtbRow" class="mtbrow" hidden>
           <div class="switches">
             <label class="switch"><span>Trails nach S-Skala färben</span><input type="checkbox" id="tMtbScale"></label>
-            <label class="switch"><span>Radrouten (Fernradwege, Bayernnetz für Radler)</span><input type="checkbox" id="tMtbRoutes"></label>
             <label class="switch"><span>Höhenlinien</span><input type="checkbox" id="tMtbContours"></label>
             <label class="switch"><span>Namen (Orte, Gipfel, Hütten, Wege)</span><input type="checkbox" id="tMtbLabels"></label>
           </div>
           <div class="legend" id="mtbLegend"><span><i style="background:#2e9e46"></i>S0</span><span><i style="background:#1f6fd1"></i>S1</span><span><i style="background:#d93025"></i>S2</span><span><i style="background:#1b1b1b"></i>S3</span><span><i style="background:#8e24aa"></i>S4+</span><span><i class="dash"></i>ohne Angabe</span></div>
-          <div class="legend" id="wegLegend"><span><i class="lg-cyc"></i>Radroute</span><span><i class="lg-fw"></i>Forstweg</span><span><i class="lg-fw2"></i>einfacher Forstweg</span><span><i class="lg-fw3"></i>wahrsch. Forstweg</span><span><i class="lg-path"></i>Pfad</span></div>
           <p class="note" id="mtbNote"></p>
         </div>
         <div class="switches">
@@ -737,7 +730,7 @@ const S={acts:[],pois:new Map(),cells:new Set(),needed:new Set(),
   fade:ls.get('fade',0.4),gray:ls.get('gray',true),halo:ls.get('halo',true),
   scheme:ls.get('scheme','glut'),revBy:ls.get('revBy',{eis:false}),heatColor:ls.get('heatColor','#e8402a'),bgColor:ls.get('bgColor','#0b0d14'),
   showPeaks:ls.get('peaks',true),showAlms:ls.get('alms',true),onlyVisited:ls.get('visited',false),
-  mtb:Object.assign({scale:true,contours:true,labels:true,routes:true},ls.get('mtb',{}))};
+  mtb:Object.assign({scale:true,contours:true,labels:true},ls.get('mtb',{}))};
 let visible=[], visibleIdx=new Set(), byId=new Map();
 let grid=new Map();
 const GY=0.002, GX=0.003, gkey=(gy,gx)=>gy*1e6+gx;
@@ -1391,7 +1384,7 @@ async function exportImage(){
       ctx.restore();
     }
     const attr=S.base==='topo'&&tilesOk?'Karte © OpenTopoMap (CC-BY-SA) · Daten © OpenStreetMap':
-      S.base==='mtb'&&tilesOk?'Karte © OpenStreetMap-Mitwirkende · Höhen © Copernicus DEM · Wege: Bayerische Vermessungsverwaltung':(EX.pois&&S.pois.size?'Gipfel © OpenStreetMap':'');
+      S.base==='mtb'&&tilesOk?'Karte © OpenStreetMap-Mitwirkende · Höhen © Copernicus DEM':(EX.pois&&S.pois.size?'Gipfel © OpenStreetMap':'');
     const info=EX.info?'Trail Log · '+fmt0.format(visible.length)+' Touren':'';
     if(attr||info){
       const fs=Math.round(Math.min(W,H)*0.011), pad=Math.round(Math.min(W,H)*0.02);
@@ -1943,7 +1936,7 @@ const KLIB={css:'https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-g
   pm:'https://cdn.jsdelivr.net/npm/pmtiles@4.5.0/dist/pmtiles.js'};
 const K={idx:null,idxErr:null,local:new Map(),proto:null,libs:null,seq:0,srcKey:null,remote:false,preview:null,busy:false};
 const mb=n=>fmt0.format(n/1e6);
-const K_ATTR='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · Copernicus DEM · <a href="https://www.geodaten.bayern.de">Bayer. Vermessungsverwaltung</a> (CC BY 4.0)';
+const K_ATTR='Karte © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap-Mitwirkende</a> · Höhen © Copernicus DEM';
 
 function kScript(src){ return new Promise((res,rej)=>{ const s=document.createElement('script'); s.src=src; s.onload=res; s.onerror=()=>rej(new Error('Laden fehlgeschlagen: '+src)); document.head.appendChild(s); }); }
 function kLibs(){
@@ -2025,7 +2018,6 @@ const MTB_COL=['match',MTB_S,'0','#2e9e46','1','#1f6fd1','2','#d93025','3','#1b1
 const ROADS_BIG=['motorway','motorway_link','trunk','trunk_link','primary','primary_link','secondary','secondary_link'];
 const ROADS_MINOR=['tertiary','tertiary_link','unclassified','residential','living_street','service','pedestrian'];
 const PATHS=['path','footway','bridleway','steps'];
-const TRACK_GOOD=['any',['in',['get','tt'],['literal',['grade1','grade2']]],['in',['get','surface'],['literal',['asphalt','paved','concrete','compacted','fine_gravel']]]];
 function mtbStyle(key){
   const o=S.mtb, src='t', vis=b=>({visibility:b?'visible':'none'}), Z=(...a)=>['interpolate',['linear'],['zoom'],...a];
   const halo={'text-halo-color':'rgba(246,244,238,.92)','text-halo-width':1.4};
@@ -2045,24 +2037,11 @@ function mtbStyle(key){
       paint:{'line-color':['match',['get','class'],['motorway','motorway_link'],'#eaa54e',['trunk','trunk_link','primary','primary_link'],'#f4c96c','#f8e2a0'],'line-width':Z(7,0.7,12,2.8,16,10)}},
     {id:'transit',type:'line',source:src,'source-layer':'transit',paint:{'line-color':['match',['get','class'],'lift','#3f3f3f','#7c7c7c'],'line-width':Z(9,0.6,14,1.4),'line-dasharray':['match',['get','class'],'lift',['literal',[4,1]],['literal',[1,0]]]}},
     {id:'mtb-under',type:'line',source:src,'source-layer':'road',filter:['has','mtb'],layout:{...vis(o.scale),'line-cap':'round','line-join':'round'},paint:{'line-color':MTB_COL,'line-opacity':0.85,'line-width':Z(11,2,13,4.2,16,9)}},
-    // Radrouten (Fernradwege, Bayernnetz für Radler): farbiges Band unter den Wegen
-    {id:'cyc-band',type:'line',source:src,'source-layer':'cycle',layout:{...vis(o.routes),'line-cap':'round','line-join':'round'},
-      paint:{'line-color':['match',['get','net'],'rcn','#8e24aa','#d81b60'],'line-opacity':0.32,'line-width':Z(8,2.5,11,6,14,11,16,16)}},
-    // Forstweg: Doppellinie; gut ausgebaut durchgehend, sonst gestrichelt. Innenlinie halb so breit, daher doppelt so lange Striche
-    {id:'track-case',type:'line',source:src,'source-layer':'road',filter:['==',['get','class'],'track'],layout:{'line-join':'round'},
-      paint:{'line-color':'#8a5a2b','line-width':Z(11,1.4,13,3,16,6),'line-dasharray':['case',TRACK_GOOD,['literal',[1,0]],['literal',[3.5,1.5]]]}},
-    {id:'track',type:'line',source:src,'source-layer':'road',filter:['==',['get','class'],'track'],layout:{'line-join':'round'},
-      paint:{'line-color':'#fff6e6','line-width':Z(11,0.7,13,1.5,16,3),'line-dasharray':['case',TRACK_GOOD,['literal',[1,0]],['literal',[7,3]]]}},
-    // Wanderweg / Pfad: rote Strichlinie
+    {id:'track',type:'line',source:src,'source-layer':'road',filter:['==',['get','class'],'track'],
+      paint:{'line-color':'#86562a','line-width':Z(11,0.8,13,1.7,16,3.2),'line-dasharray':['match',['get','tt'],'grade1',['literal',[1,0]],'grade2',['literal',[5,1.5]],['literal',[3,2]]]}},
     {id:'path',type:'line',source:src,'source-layer':'road',filter:cls(PATHS),
-      paint:{'line-color':o.scale?['case',['has','mtb'],'#ffffff','#c62828']:'#c62828','line-opacity':['match',['get','vis'],['bad','horrible','no'],0.45,1],'line-width':Z(11,0.7,13,1.4,16,2.6),'line-dasharray':['match',['get','class'],'steps',['literal',[0.6,0.6]],['literal',[2.2,1.6]]]}},
-    // Pfad, laut amtlichen Daten (ATKIS) aber befahrbarer Weg: wahrscheinlich Forstweg (liegt über dem Pfad und deckt ihn ab)
-    {id:'fw-case',type:'line',source:src,'source-layer':'fw',paint:{'line-color':'#8a5a2b','line-width':Z(11,1.4,13,3,16,6),'line-dasharray':[1.2,1]}},
-    {id:'fw',type:'line',source:src,'source-layer':'fw',paint:{'line-color':'#fff6e6','line-width':Z(11,0.8,13,1.7,16,3.4)}},
-    {id:'cycleway',type:'line',source:src,'source-layer':'road',filter:['==',['get','class'],'cycleway'],paint:{'line-color':'#2b6cb0','line-width':Z(11,0.8,16,2.6)}},
-    {id:'cyc-label',type:'symbol',source:src,'source-layer':'cycle',minzoom:10,filter:['has','name'],
-      layout:{...vis(o.routes&&o.labels),'symbol-placement':'line','text-field':['get','name'],'text-font':['Noto Sans Regular'],'text-size':Z(10,10,15,12),'symbol-spacing':420},
-      paint:{'text-color':['match',['get','net'],'rcn','#6a1b9a','#ad1457'],...halo}},
+      paint:{'line-color':'#36342f','line-opacity':['match',['get','vis'],['bad','horrible','no'],0.45,1],'line-width':Z(11,0.7,13,1.4,16,2.6),'line-dasharray':['match',['get','class'],'steps',['literal',[0.6,0.6]],['literal',[2.2,1.6]]]}},
+    {id:'cycleway',type:'line',source:src,'source-layer':'road',filter:['==',['get','class'],'cycleway'],paint:{'line-color':'#2b6cb0','line-width':Z(11,0.6,16,2),'line-dasharray':[3,1.5]}},
     {id:'ct-label',type:'symbol',source:src,'source-layer':'contour',filter:['==',['get','idx'],1],minzoom:12.5,layout:{...vis(o.contours&&o.labels),'symbol-placement':'line','text-field':['to-string',['get','ele']],'text-font':['Noto Sans Regular'],'text-size':9,'symbol-spacing':350},paint:{'text-color':'#97714a',...halo}},
     {id:'rd-label',type:'symbol',source:src,'source-layer':'road',minzoom:13,filter:['has','name'],layout:{...vis(o.labels),'symbol-placement':'line','text-field':['get','name'],'text-font':['Noto Sans Regular'],'text-size':10,'symbol-spacing':300},paint:{'text-color':'#4a4740',...halo}},
     {id:'lift-label',type:'symbol',source:src,'source-layer':'transit',minzoom:12,filter:['all',['==',['get','class'],'lift'],['has','name']],layout:{...vis(o.labels),'symbol-placement':'line','text-field':['get','name'],'text-font':['Noto Sans Italic'],'text-size':10},paint:{'text-color':'#333',...halo}},
@@ -2126,17 +2105,15 @@ function mtbTrailInfo(ll){
     if(S.base!=='mtb'||!curBase||!curBase.getMaplibreMap) return '';
     const gm=curBase.getMaplibreMap(); if(!gm||!gm.getLayer('path')) return '';
     const p=gm.project([ll.lng,ll.lat]), r=12;
-    const fs=gm.queryRenderedFeatures([[p.x-r,p.y-r],[p.x+r,p.y+r]],{layers:['path','fw','track','cycleway','rd-minor','mtb-under'].filter(id=>gm.getLayer(id))});
-    const rt=gm.getLayer('cyc-band')?[...new Set(gm.queryRenderedFeatures([[p.x-r,p.y-r],[p.x+r,p.y+r]],{layers:['cyc-band']}).map(x=>x.properties.names||x.properties.name).filter(Boolean))]:[];
-    const rtHtml=rt.length?`<div class="pp-v" style="color:#ad1457;margin-bottom:4px">Radroute: ${esc(rt.slice(0,3).join(' · '))}</div>`:'';
-    if(!fs.length) return rtHtml?`<div class="pp pp-trail">${rtHtml}</div>`:'';
+    const fs=gm.queryRenderedFeatures([[p.x-r,p.y-r],[p.x+r,p.y+r]],{layers:['path','track','cycleway','rd-minor','mtb-under'].filter(id=>gm.getLayer(id))});
+    if(!fs.length) return '';
     const rank=f=>(f.properties.mtb!=null?0:2)+(PATHS.includes(f.properties.class)||f.properties.class==='track'?0:1);
     const f=fs.sort((a,b)=>rank(a)-rank(b))[0].properties;
     const row=(k,v)=>v?`<dt>${k}</dt><dd>${v}</dd>`:'';
     const sc=f.mtb!=null?String(f.mtb).replace(/^s/i,''):'', sn=sc.charAt(0);
     const sHtml=sc?`<span class="s" style="background:${K_SCOL[sn]||'#8e24aa'}">S${esc(sc)}</span>`:'<span class="muted">keine Angabe</span>';
     const osm=`https://www.openstreetmap.org/#map=18/${ll.lat.toFixed(5)}/${ll.lng.toFixed(5)}`;
-    return `<div class="pp pp-trail"><div class="pp-k">${esc(K_CLASS[f.class]||f.class||'Weg')}</div>${f.name?`<div class="pp-n">${esc(f.name)}</div>`:''}${rtHtml}${fs.some(x=>x.layer.id==='fw')?'<div class="muted">Laut amtlichen Daten ein befahrbarer Weg, wahrscheinlich Forstweg.</div>':''}<dl>`+
+    return `<div class="pp pp-trail"><div class="pp-k">${esc(K_CLASS[f.class]||f.class||'Weg')}</div>${f.name?`<div class="pp-n">${esc(f.name)}</div>`:''}<dl>`+
       row('S-Skala',sHtml)+row('Wanderskala',esc(K_SAC[f.sac]||f.sac||''))+row('Untergrund',esc(K_SURF[f.surface]||f.surface||''))+
       row('Wegzustand',esc(K_TT[f.tt]||f.tt||''))+row('Sichtbarkeit',esc(K_VIS[f.vis]||f.vis||''))+row('Fahrrad',f.bicycle==='no'?'<b>verboten</b>':(f.bicycle==='yes'||f.bicycle==='designated'?'erlaubt':''))+
       `</dl><div class="muted" style="margin-top:6px">Falsch? <a href="${osm}" target="_blank" rel="noopener">In OpenStreetMap ansehen und korrigieren</a></div></div>`;
@@ -2232,7 +2209,7 @@ async function kDownload(id){
 }
 
 /* Schalter für die MTB-Karte */
-[['tMtbScale','scale'],['tMtbContours','contours'],['tMtbLabels','labels'],['tMtbRoutes','routes']].forEach(([el,k])=>{
+[['tMtbScale','scale'],['tMtbContours','contours'],['tMtbLabels','labels']].forEach(([el,k])=>{
   const t=$('#'+el); t.checked=!!S.mtb[k];
   t.addEventListener('change',()=>{ S.mtb[k]=t.checked; ls.set('mtb',S.mtb); $('#mtbLegend').hidden=!S.mtb.scale; mtbRestyle(); });
 });
