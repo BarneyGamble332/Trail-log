@@ -50,7 +50,7 @@ jobs:
           mkdir -p www/karte && cp -r karte/fonts www/karte/
           rm -rf libs
           npm init -y >/dev/null
-          npm i --no-audit --no-fund @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6 @capacitor/filesystem@6 @capacitor/share@6 @capacitor-community/background-geolocation@1.2.20
+          npm i --no-audit --no-fund @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6 @capacitor/filesystem@6 @capacitor/share@6 @capacitor-community/background-geolocation@1.2.20 @capacitor-community/bluetooth-le@6
           npx cap init "Trail Log" de.bernhard.traillog --web-dir www
           # Ohne useLegacyBridge drosselt Android die GPS-Übergabe an die App im Hintergrund (Plugin-Doku)
           node -e "const f='capacitor.config.json',c=require('./'+f);c.android=Object.assign(c.android||{},{useLegacyBridge:true});require('fs').writeFileSync(f,JSON.stringify(c,null,2))"
@@ -241,6 +241,7 @@ jobs:
                   boolean running = call.getBoolean("running", false);
                   // getDouble() liefert bei grossen ganzen Zahlen (Millisekunden) den Standardwert 0, daher optLong
                   long start = call.getData().optLong("start", 0L);
+                  TrailWidgetProvider.saveHr(getContext(), call.getString("hr", ""));
                   TrailWidgetProvider.save(getContext(), running, start,
                       call.getString("dist", "0,0"), call.getString("gain", "0"),
                       call.getString("m", ""), call.getString("mt", "–"),
@@ -578,6 +579,10 @@ jobs:
           public class TrailWidgetProvider extends AppWidgetProvider {
               static final String PREF = "tlwidget";
 
+              static void saveHr(Context c, String hr) {
+                  c.getSharedPreferences(PREF, Context.MODE_PRIVATE).edit().putString("hr", hr == null ? "" : hr).apply();
+              }
+
               static void save(Context c, boolean running, long start, String dist, String gain,
                                String month, String tours, String km, String hm, String days, String hdays) {
                   c.getSharedPreferences(PREF, Context.MODE_PRIVATE).edit()
@@ -676,6 +681,9 @@ jobs:
                       v.setChronometer(R.id.w_time, SystemClock.elapsedRealtime() - elapsed, null, true);
                       v.setTextViewText(R.id.w_dist, p.getString("dist", "0,0"));
                       v.setTextViewText(R.id.w_gain, p.getString("gain", "0"));
+                      String hr = p.getString("hr", "");
+                      v.setViewVisibility(R.id.w_hrbox, hr.isEmpty() ? View.GONE : View.VISIBLE);
+                      v.setTextViewText(R.id.w_hr, hr);
                       v.setOnClickPendingIntent(R.id.w_stop, act(c, "stop", 3));
                   } else {
                       v.setViewVisibility(R.id.w_run, View.GONE);
@@ -1160,6 +1168,32 @@ jobs:
                               android:textColor="#8E99A1"
                               android:textSize="10sp" />
                       </LinearLayout>
+                      <LinearLayout
+                          android:id="@+id/w_hrbox"
+                          android:layout_width="wrap_content"
+                          android:layout_height="wrap_content"
+                          android:layout_marginEnd="18dp"
+                          android:orientation="vertical"
+                          android:visibility="gone">
+                          <TextView
+                              android:id="@+id/w_hr"
+                              android:layout_width="wrap_content"
+                              android:layout_height="wrap_content"
+                              android:fontFamily="sans-serif-medium"
+                              android:includeFontPadding="false"
+                              android:text="0"
+                              android:textColor="#FF8A80"
+                              android:textSize="26sp" />
+                          <TextView
+                              android:layout_width="wrap_content"
+                              android:layout_height="wrap_content"
+                              android:layout_marginTop="2dp"
+                              android:includeFontPadding="false"
+                              android:letterSpacing="0.08"
+                              android:text="♥ PULS"
+                              android:textColor="#8E99A1"
+                              android:textSize="10sp" />
+                      </LinearLayout>
                       </LinearLayout>
                   </LinearLayout>
               </LinearLayout>
@@ -1325,8 +1359,16 @@ jobs:
                 '    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />\n'
                 '    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />\n'
                 '    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />\n'
-                '    <uses-permission android:name="android.permission.ACCESS_MEDIA_LOCATION" />\n</manifest>')
+                '    <uses-permission android:name="android.permission.ACCESS_MEDIA_LOCATION" />\n'
+                # Pulsgurt (Bluetooth). Das Bluetooth-Plugin begrenzt die Standort-Rechte auf Android <= 11;
+                # tools:remove hebt das wieder auf, sonst ginge die GPS-Aufnahme auf neueren Handys nicht mehr.
+                '    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" tools:targetApi="s" />\n'
+                '    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />\n'
+                '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" tools:remove="android:maxSdkVersion" />\n'
+                '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" tools:remove="android:maxSdkVersion" />\n</manifest>')
           s=s.replace('</manifest>',perm,1)
+          if 'xmlns:tools=' not in s:
+              s=s.replace('<manifest ','<manifest xmlns:tools="http://schemas.android.com/tools" ',1)
           open(m,'w').write(s)
           st='android/app/src/main/res/values/strings.xml'
           t=open(st).read()

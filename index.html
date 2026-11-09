@@ -156,6 +156,15 @@ ol.how{margin:0;padding-left:20px;color:var(--muted);font-size:14px;display:flex
 .legend{display:flex;flex-wrap:wrap;gap:6px 12px;font:500 13px/1 var(--f-body);color:var(--muted);margin:6px 0 8px}
 .legend i{display:inline-block;width:18px;height:5px;border-radius:3px;margin-right:5px;vertical-align:middle}
 .legend i.dash{height:0;border-top:2px dashed #3b3a36;border-radius:0}
+.hr-top{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.hr-bpm{font:600 30px/1 var(--f-num);color:#d32f2f}
+.hrv{color:#d32f2f}.hrv i{font-style:normal}
+.recording .rec-hud .hrv{color:#ff8a80}
+.hrz{display:flex;height:14px;border-radius:7px;overflow:hidden;background:var(--chip);margin-top:6px}
+.hrz i{display:block;height:100%}
+.hrz-l{display:grid;grid-template-columns:1fr 1fr;gap:2px 10px;font-size:12px;color:var(--muted);margin-top:6px}
+.hrz-l i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.fld{display:flex;flex-direction:column;gap:6px;font-size:14px}
 .kcard{border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:8px}
 .kcard b{font:700 17px/1.1 var(--f-display);letter-spacing:.03em}
 .kcard .kst{font-size:13px;color:var(--muted)}
@@ -281,7 +290,7 @@ canvas.prof{width:100%;height:120px;display:block}
   <div class="sign">Trail Log</div>
   <div class="loading" id="loadChip" hidden>Lade Gipfel &amp; Almen …</div>
   <div class="loading" id="mtbChip" hidden></div>
-  <div class="rec-hud" id="recHud" hidden><span class="rdot"></span><b id="rhD">0,0 km</b><b id="rhH">0 Hm</b><span id="rhT">0:00</span><button class="ic" id="rhFollow" hidden aria-label="Karte folgt wieder der Position">⌖</button><button id="rhStop">Stopp</button></div>
+  <div class="rec-hud" id="recHud" hidden><span class="rdot"></span><b id="rhD">0,0 km</b><b id="rhH">0 Hm</b><b id="rhP" class="hrv" hidden><i>♥</i> –</b><span id="rhT">0:00</span><button class="ic" id="rhFollow" hidden aria-label="Karte folgt wieder der Position">⌖</button><button id="rhStop">Stopp</button></div>
   <div class="nav-hud" id="navHud" hidden></div>
 </div>
 
@@ -305,9 +314,13 @@ canvas.prof{width:100%;height:120px;display:block}
         <button class="rec-go" id="rcGo"><span class="rdot"></span>Aufnahme starten</button>
       </div>
       <div class="stack recp" id="recLive" hidden>
-        <div class="rec-big"><span class="rdot"></span><b id="rpD">0,0 km</b><b id="rpH">0 Hm</b><span id="rpT">0:00</span></div>
+        <div class="rec-big"><span class="rdot"></span><b id="rpD">0,0 km</b><b id="rpH">0 Hm</b><b id="rpP" class="hrv" hidden><i>♥</i> –</b><span id="rpT">0:00</span></div>
         <button class="btn primary" id="rpStop">Aufnahme beenden und speichern</button>
         <button class="btn" id="rpDrop">Verwerfen</button>
+      </div>
+      <div class="kcard" id="hrBox">
+        <div class="hr-top"><div><b id="hrName">Kein Pulsgurt gekoppelt</b><div class="kst" id="hrState"></div></div><span class="hr-bpm" id="hrBpm" hidden>–</span></div>
+        <div class="kbtns"><button class="btn" id="hrPair">Pulsgurt verbinden</button><button class="btn" id="hrConn" hidden>Verbinden</button><button class="btn" id="hrForget" hidden>Entfernen</button></div>
       </div>
       <div class="stack recp" id="navBox">
         <h3 style="margin:0">Route</h3>
@@ -405,6 +418,13 @@ canvas.prof{width:100%;height:120px;display:block}
         <button class="btn primary" id="btnZip">Strava-Export (ZIP) laden</button>
         <button class="btn" id="btnFiles">Einzelne GPX-/FIT-/TCX-Dateien</button>
         <p class="note">Bereits importierte Touren werden übersprungen, du kannst also jederzeit einen neueren Export nachladen. Touren aus älteren Versionen bekommen dabei Höhenprofil, Bewegungszeit und die Zeit je Punkt nachgetragen, falsche Zeitzonen werden korrigiert. Alles bleibt auf diesem Gerät.</p>
+      </div>
+      <div>
+        <h3>Puls</h3>
+        <div class="stack">
+          <label class="fld">Maximalpuls (Schläge pro Minute)<input class="sel" type="number" id="setHrMax" min="120" max="230" inputmode="numeric" placeholder="z. B. 185"></label>
+          <p class="note">Für die 5 Pulszonen: Z1 unter 60 %, Z2 60–70 %, Z3 70–80 %, Z4 80–90 %, Z5 ab 90 % vom Maximalpuls. Ohne Angabe wird der höchste Puls aus deinen Touren genommen. Gekoppelter Gurt: <span id="setHrDev">keiner</span> (koppeln im Reiter Aufnahme).</p>
+        </div>
       </div>
       <div>
         <h3>So bekommst du den Strava-Export</h3>
@@ -661,6 +681,7 @@ function buildAct(id,trk,meta){
   fixTrackZone(trk,meta);
   let dist=0, gain=0, ref=null, mv=0, s=90,w=180,nn=-90,e=-180;
   const keep=[trk.lat[0],trk.lon[0]], keepE=[isFinite(trk.ele[0])?trk.ele[0]:NaN], keepT=[trk.t?trk.t[0]:NaN]; let kl=trk.lat[0], ko=trk.lon[0];
+  const H=trk.hr&&trk.hr.length===n&&trk.hr.some(v=>v>0)?trk.hr:null, keepH=H?[H[0]||0]:null; let hS=0,hN=0,hM=0;
   let t0=NaN,t1=NaN;
   for(let i=0;i<n;i++){
     const a=trk.lat[i], o=trk.lon[i];
@@ -670,14 +691,16 @@ function buildAct(id,trk,meta){
     const el=trk.ele[i];
     if(isFinite(el)){ if(ref===null) ref=el; else if(el-ref>4){ gain+=el-ref; ref=el; } else if(ref-el>4) ref=el; }
     const tt=trk.t[i]; if(isFinite(tt)){ if(isNaN(t0)) t0=tt; t1=tt; }
-    if(i>0){ const dx=(o-ko)*Math.cos(a*D2R)*111320, dy=(a-kl)*110540; if(dx*dx+dy*dy>=64 || i===n-1){ keep.push(a,o); keepE.push(isFinite(el)?el:NaN); keepT.push(trk.t?trk.t[i]:NaN); kl=a; ko=o; } }
+    if(H&&H[i]>0){ hS+=H[i]; hN++; if(H[i]>hM) hM=H[i]; }
+    if(i>0){ const dx=(o-ko)*Math.cos(a*D2R)*111320, dy=(a-kl)*110540; if(dx*dx+dy*dy>=64 || i===n-1){ keep.push(a,o); keepE.push(isFinite(el)?el:NaN); keepT.push(trk.t?trk.t[i]:NaN); if(keepH) keepH.push(H[i]||0); kl=a; ko=o; } }
   }
   const m=meta||{};
   const date=isFinite(t0)?t0:(isFinite(m.date)?m.date:Date.now());
   const dur=isFinite(t1-t0)?(t1-t0)/1000:0;
   return {id:String(id), n:(m.name||trk.name||'Tour').trim(), t:typeKey(m.type||trk.type), d:date,
     dist, gain:isFinite(m.gain)?m.gain:gain, dur, mv:mv>0?mv:dur, v:3,
-    bb:[s,w,nn,e], c:new Float32Array(keep), e:new Float32Array(keepE), ts:actTimes(keepT,date)};
+    bb:[s,w,nn,e], c:new Float32Array(keep), e:new Float32Array(keepE), ts:actTimes(keepT,date),
+    ...(keepH&&hN?{hr:Uint8Array.from(keepH,v=>Math.min(255,Math.max(0,Math.round(v)))),hrA:Math.round(hS/hN),hrM:hM}:{})};
 }
 /* Zeit je Punkt als Sekunden ab Start (Float64 wegen Bruchteilen), nur wenn alle Punkte eine Zeit haben */
 function actTimes(T,d){
@@ -1545,9 +1568,12 @@ function renderDetail(a){
       <div class="tile"><div class="v">${fmt0.format(a.gain)}<small>Hm</small></div><div class="l">Aufstieg</div></div>
       <div class="tile"><div class="v sm">${fmtDur(mt)}</div><div class="l">Bewegungszeit</div></div>
       <div class="tile"><div class="v">${sp?fmt1.format(sp):'–'}<small>km/h</small></div><div class="l">Ø Tempo</div></div>
+      ${a.hrM?`<div class="tile"><div class="v hrv">${a.hrA}<small>bpm</small></div><div class="l">Ø Puls</div></div>
+      <div class="tile"><div class="v hrv">${a.hrM}<small>bpm</small></div><div class="l">Max. Puls</div></div>`:''}
     </div>
     ${phStrip(a)}
-    <div><h3>Höhenprofil</h3><canvas id="prof" class="prof"></canvas><p class="note" id="profNote" hidden></p></div>
+    <div><h3>${a.hr?'Höhe und Puls':'Höhenprofil'}</h3><canvas id="prof" class="prof"></canvas><p class="note" id="profNote" hidden></p></div>
+    ${hrZonesHtml(a)}
     <button class="btn" id="tFit">Auf Karte zeigen</button>
     <button class="btn danger" id="tDel">Tour löschen</button>
     <button class="btn" id="tGpx">Als GPX exportieren</button>`;
@@ -1573,6 +1599,16 @@ function drawProfile(cv,a){
   g.fillStyle=cssVar('--muted'); g.font='11px '+cssVar('--f-num'); g.textBaseline='alphabetic';
   g.textAlign='left'; g.fillText(Math.round(mxv)+' m',4,11); g.fillText(Math.round(mn)+' m',4,h-3);
   g.textAlign='right'; g.fillText(fmt1.format(D/1000)+' km',w-4,h-3);
+  if(a.hr&&a.hr.length===n){ // Pulskurve, eigene Skala rechts
+    const H=new Float64Array(n); let hmn=Infinity,hmx=-Infinity;
+    for(let i=0;i<n;i++){ let s=0,k=0; for(let j=Math.max(0,i-3);j<=Math.min(n-1,i+3);j++) if(a.hr[j]>0){ s+=a.hr[j]; k++; } H[i]=k?s/k:NaN; if(k){ if(H[i]<hmn) hmn=H[i]; if(H[i]>hmx) hmx=H[i]; } }
+    if(isFinite(hmn)){
+      const hy=v=>base-(v-hmn)/((hmx-hmn)||1)*(h-34)-4;
+      g.beginPath(); let st=false; for(let i=0;i<n;i++){ if(!isFinite(H[i])){ st=false; continue; } st?g.lineTo(px(i),hy(H[i])):g.moveTo(px(i),hy(H[i])); st=true; }
+      g.strokeStyle='#d32f2f'; g.lineWidth=1.6; g.stroke();
+      g.fillStyle='#d32f2f'; g.textAlign='right'; g.fillText(Math.round(hmx)+' bpm',w-4,11);
+    }
+  }
 }
 
 /* ---------- Auswahl auf der Karte ---------- */
@@ -1610,11 +1646,12 @@ function tourGpx(a){
     if(i>0&&((c[i+1]-c[i-1])*Math.cos(c[i]*D2R)*111320)**2+((c[i]-c[i-2])*110540)**2>GAP_M*GAP_M){ if(cur.length) segs.push(cur); cur=[]; }
     const el=e&&isFinite(e[i/2])?`<ele>${(Math.round(e[i/2]*10)/10)}</ele>`:'';
     const tm=a.ts&&a.ts.length*2===c.length?`<time>${new Date(a.d+a.ts[i/2]*1000).toISOString()}</time>`:i===0?`<time>${iso}</time>`:'';
-    cur.push(`<trkpt lat="${(+c[i]).toFixed(6)}" lon="${(+c[i+1]).toFixed(6)}">${el}${tm}</trkpt>`);
+    const hx=a.hr&&a.hr[i/2]>0?`<extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>${a.hr[i/2]}</gpxtpx:hr></gpxtpx:TrackPointExtension></extensions>`:'';
+    cur.push(`<trkpt lat="${(+c[i]).toFixed(6)}" lon="${(+c[i+1]).toFixed(6)}">${el}${tm}${hx}</trkpt>`);
   }
   if(cur.length) segs.push(cur);
   return `<?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="Trail Log" xmlns="http://www.topografix.com/GPX/1/1">
+<gpx version="1.1" creator="Trail Log" xmlns="http://www.topografix.com/GPX/1/1" xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1">
 <metadata><name>${x(a.n)}</name><time>${iso}</time></metadata>
 <trk><name>${x(a.n)}</name><type>${x(a.t)}</type>
 ${segs.map(sg=>'<trkseg>\n'+sg.join('\n')+'\n</trkseg>').join('\n')}
@@ -1699,6 +1736,7 @@ async function recStart(){
   // zuletzt genutzte Rad- bzw. Geh-Art für die Widgets merken
   if(['hike','walk','snowshoe'].includes(REC.type)) ls.set('lastHike',REC.type); else if(['mountainbikeride','emountainbikeride','ebikeride','ride','gravelride'].includes(REC.type)) ls.set('lastBike',REC.type);
   Object.assign(REC,{on:true,pts:[],t0:Date.now(),dist:0,follow:true,dot:null,rej:0,gain:0,ref:null,ab:[]});
+  hrRecStart();
   recLayer.clearLayers(); selLayer.clearLayers(); TOUR.sel=null; renderTours();
   REC.line=L.polyline([],{pane:'route',interactive:false,color:'#1b7fe8',weight:5,lineJoin:'round',lineCap:'round'}).addTo(recLayer);
   try{ REC.wl=await navigator.wakeLock.request('screen'); }catch(e){}
@@ -1718,7 +1756,7 @@ async function recStart(){
   document.body.classList.add('recording'); recUI(); $('#recHud').hidden=false; $('#rhFollow').hidden=true;
   sheet.classList.remove('open'); recTick(); REC.tick=setInterval(recTick,1000); widgetPush(true);
 }
-function recTick(){ if(!REC.on) return; widgetPush(); const h=fmt0.format(REC.gain)+' Hm', d=fmt1.format(REC.dist/1000)+' km', t=fmtClock((Date.now()-REC.t0)/1000); $('#rhD').textContent=d; $('#rhT').textContent=t; $('#rhH').textContent=h; $('#rpH').textContent=h; $('#rpD').textContent=d; $('#rpT').textContent=t; }
+function recTick(){ if(!REC.on) return; widgetPush(); const h=fmt0.format(REC.gain)+' Hm', d=fmt1.format(REC.dist/1000)+' km', t=fmtClock((Date.now()-REC.t0)/1000); $('#rhD').textContent=d; $('#rhT').textContent=t; $('#rhH').textContent=h; $('#rpH').textContent=h; $('#rpD').textContent=d; $('#rpT').textContent=t; hrShow(); }
 function recPos(p){
   if(!REC.on) return;
   const c=p.coords; if(c.accuracy>40) return;
@@ -1734,6 +1772,7 @@ function recPos(p){
     if(dt>0&&dt<30&&s/dt>35&&REC.rej<3){ REC.rej++; return; }
     REC.rej=0; if(s<600) REC.dist+=s;
   }
+  if(HR.dev){ const h=hrAt(n[3]); if(h) n[4]=h; } // Puls zur Zeit des GPS-Punkts
   REC.pts.push(n);
   if(n[2]!=null){ // Hoehenmeter live: Mittel der letzten 3 Hoehen, Schwelle 4 m gegen GPS-Rauschen
     REC.ab.push(n[2]); if(REC.ab.length>3) REC.ab.shift();
@@ -1765,7 +1804,7 @@ async function recBgPrep(){
 }
 async function recStop(discard){
   try{ navigator.geolocation.clearWatch(REC.watch); }catch(e){} if(NATIVE&&REC.bgId!=null){ try{ await BG.removeWatcher({id:REC.bgId}); }catch(e){} REC.bgId=null; } clearInterval(REC.tick); try{ REC.wl&&REC.wl.release(); }catch(e){}
-  const pts=REC.pts, type=REC.type, t0=REC.t0; REC.on=false; REC.pts=[]; REC.dist=0; REC.gain=0; REC.wl=null; widgetPush(true);
+  const pts=REC.pts, type=REC.type, t0=REC.t0; REC.on=false; REC.pts=[]; REC.dist=0; REC.gain=0; REC.wl=null; widgetPush(true); hrRecStop();
   document.body.classList.remove('recording'); recUI(); $('#recHud').hidden=true; $('#navHud').hidden=true; NAV.idx=0;
   if(!ME.on){ meHide(); compassStop(); } recLayer.clearLayers(); ls.set('rec',null);
   if(!discard) await saveRecording(pts,type,t0);
@@ -1773,6 +1812,7 @@ async function recStop(discard){
 async function saveRecording(pts,type,t0){
   if(pts.length<2){ toast('Zu wenige GPS-Punkte, die Aufnahme wurde nicht gespeichert.',5000); return; }
   const trk={lat:pts.map(p=>p[0]),lon:pts.map(p=>p[1]),ele:pts.map(p=>p[2]==null?NaN:p[2]),t:pts.map(p=>p[3]),name:'',type};
+  if(pts.some(p=>p[4]>0)) trk.hr=pts.map(p=>p[4]||0);
   const act=buildAct('rec_'+t0,trk,{name:'Aufzeichnung '+fmtDate(t0)+', '+fmtTime(t0),type,date:t0});
   if(!act){ toast('Die Aufnahme konnte nicht gespeichert werden.',5000); return; }
   S.acts.push(act); await idb.put('acts',[act]).catch(()=>{}); actsChanged(); openTour(act.id); toast('Tour gespeichert.');
@@ -1791,14 +1831,126 @@ map.on('dragstart',()=>{ if(REC.on){ REC.follow=false; $('#rhFollow').hidden=fal
 document.addEventListener('visibilitychange',async()=>{ if(REC.on&&document.visibilityState==='visible'){ try{ REC.wl=await navigator.wakeLock.request('screen'); }catch(e){} } });
 
 
+/* ---------- Pulsgurt (Bluetooth, Standard-Herzfrequenzprofil) ----------
+   Einmal koppeln, danach verbindet sich der Gurt bei jeder Aufnahme von selbst. Der Puls wird mit Zeitstempel
+   gepuffert und beim Speichern eines GPS-Punkts über dessen Zeit zugeordnet (Punkte kommen bei gesperrtem Handy
+   gesammelt und verspätet an). */
+const HRS='0000180d-0000-1000-8000-00805f9b34fb', HRM='00002a37-0000-1000-8000-00805f9b34fb',
+  BATS='0000180f-0000-1000-8000-00805f9b34fb', BATL='00002a19-0000-1000-8000-00805f9b34fb';
+const HR={dev:ls.get('hr.dev',null),bpm:0,t:0,bat:null,conn:false,want:false,busy:false,hist:[],init:false,retry:null};
+const blePlug=()=>NATIVE?nativePlugin('BluetoothLe'):null;
+const hexBytes=v=>{ if(v==null) return [];
+  if(typeof v==='string') return v.trim().split(/\s+/).filter(Boolean).map(h=>parseInt(h,16));
+  if(v instanceof DataView) return Array.from(new Uint8Array(v.buffer,v.byteOffset,v.byteLength));
+  if(Array.isArray(v)) return v; return []; };
+function hrParse(b){ if(b.length<2) return 0; return (b[0]&1)?(b[1]|(b[2]<<8)):b[1]; }
+function hrAt(t){ // Puls zu einem Zeitpunkt (ms): nächster Messwert innerhalb von 5 s
+  const h=HR.hist; let best=0,bd=5001;
+  for(let i=h.length-1;i>=0;i--){ const d=Math.abs(h[i][0]-t); if(d<bd){ bd=d; best=h[i][1]; } if(h[i][0]<t-5000) break; }
+  return best||null;
+}
+async function bleInit(){ const B=blePlug(); if(!B) throw new Error('Bluetooth gibt es nur in der Android-App.');
+  if(!HR.init){ await B.initialize({androidNeverForLocation:true}); HR.init=true; }
+  try{ const e=await B.isEnabled(); if(e&&e.value===false){ toast('Bitte Bluetooth einschalten.',5000); try{ await B.requestEnable(); }catch(x){} } }catch(x){}
+  return B;
+}
+async function hrPair(){
+  try{
+    const B=await bleInit();
+    toast('Gurt anlegen und die Elektroden befeuchten, dann den Gurt in der Liste wählen.',6000);
+    const d=await B.requestDevice({services:[HRS],optionalServices:[BATS]});
+    if(!d||!d.deviceId) return;
+    if(HR.dev&&HR.dev.id!==d.deviceId) await hrDisconnect();
+    HR.dev={id:d.deviceId,name:d.name||'Pulsgurt'}; ls.set('hr.dev',HR.dev); hrUI();
+    await hrConnect(true);
+  }catch(e){ const m=String(e&&e.message||e); if(!/cancel/i.test(m)) toast('Pulsgurt: '+m.slice(0,120),6000); }
+}
+async function hrConnect(loud){
+  if(!HR.dev||HR.conn||HR.busy) return; HR.busy=true; hrUI();
+  const B=blePlug(), id=HR.dev.id;
+  try{
+    await bleInit();
+    await B.addListener('disconnected|'+id,()=>{ HR.conn=false; HR.bpm=0; hrUI(); if(HR.want) hrRetry(); });
+    await B.connect({deviceId:id,timeout:15000});
+    await B.addListener(`notification|${id}|${HRS}|${HRM}`,r=>{
+      const v=hrParse(hexBytes(r&&r.value)); if(!v) return;
+      HR.bpm=v; HR.t=Date.now(); HR.hist.push([HR.t,v]); if(HR.hist.length>1200) HR.hist.splice(0,200); hrShow();
+    });
+    await B.startNotifications({deviceId:id,service:HRS,characteristic:HRM});
+    HR.conn=true;
+    try{ const r=await B.read({deviceId:id,service:BATS,characteristic:BATL}); const b=hexBytes(r&&r.value); if(b.length) HR.bat=b[0]; }catch(x){}
+    if(loud) toast(`${HR.dev.name} verbunden.`);
+  }catch(e){
+    HR.conn=false;
+    if(loud) toast('Pulsgurt nicht erreichbar. Ist er angelegt und die Elektroden feucht?',6000);
+    if(HR.want) hrRetry();
+  }finally{ HR.busy=false; hrUI(); }
+}
+function hrRetry(){ clearTimeout(HR.retry); HR.retry=setTimeout(()=>{ if(HR.want&&!HR.conn) hrConnect(false); },5000); }
+async function hrDisconnect(){
+  clearTimeout(HR.retry); const B=blePlug(); if(!B||!HR.dev) return;
+  const id=HR.dev.id; HR.conn=false; HR.bpm=0;
+  try{ await B.stopNotifications({deviceId:id,service:HRS,characteristic:HRM}); }catch(e){}
+  try{ await B.disconnect({deviceId:id}); }catch(e){}
+  try{ await B.removeAllListeners(); }catch(e){}
+  hrUI();
+}
+const hrLive=()=>HR.conn&&HR.bpm&&Date.now()-HR.t<6000?HR.bpm:0;
+function hrShow(){
+  const v=hrLive(), s=v?String(v):'–';
+  ['#rhP','#rpP'].forEach(q=>{ const el=$(q); if(el){ el.hidden=!HR.dev||!REC.on; el.lastChild.textContent=' '+s; } });
+  const big=$('#hrBpm'); if(big) big.textContent=v?s:'–';
+}
+function hrUI(){
+  const box=$('#hrBox'); if(!box) return;
+  const has=!!HR.dev;
+  $('#hrName').textContent=has?HR.dev.name:'Kein Pulsgurt gekoppelt';
+  $('#hrState').textContent=!has?'Puls wird mit aufgezeichnet, wenn ein Gurt gekoppelt ist.':
+    HR.busy?'verbinde …':HR.conn?('verbunden'+(HR.bat!=null?` · Akku ${HR.bat} %`:'')):(HR.want?'nicht erreichbar, neuer Versuch …':'getrennt, verbindet sich bei der Aufnahme');
+  $('#hrState').classList.toggle('ok',HR.conn);
+  $('#hrPair').textContent=has?'Anderen Gurt koppeln':'Pulsgurt verbinden';
+  $('#hrConn').hidden=!has||HR.conn||HR.busy; $('#hrForget').hidden=!has;
+  $('#hrBpm').hidden=!has; hrShow();
+  const sf=$('#setHrDev'); if(sf) sf.textContent=has?HR.dev.name:'keiner';
+}
+async function hrRecStart(){ if(!HR.dev) return; HR.want=true; HR.hist=[]; if(!HR.conn) hrConnect(false); hrShow(); }
+async function hrRecStop(){ HR.want=false; await hrDisconnect(); hrShow(); }
+
+/* Zonen nach Prozent vom Maximalpuls: Z1 <60 %, Z2 60–70, Z3 70–80, Z4 80–90, Z5 ab 90 % */
+const ZONE_P=[0.6,0.7,0.8,0.9], ZONE_C=['#90a4ae','#4fc3f7','#81c784','#ffb74d','#e57373'];
+function hrMaxUser(){ const v=+ls.get('hrMax',0); if(v>=120&&v<=230) return v; let m=0; for(const a of S.acts) if(a.hrM>m) m=a.hrM; return m>=120?m:0; }
+function hrZones(a){
+  if(!a.hr||!a.ts||a.hr.length!==a.ts.length) return null;
+  const mx=hrMaxUser(); if(!mx) return null; const z=[0,0,0,0,0];
+  for(let i=1;i<a.hr.length;i++){ const v=a.hr[i]; const dt=a.ts[i]-a.ts[i-1]; if(!v||!(dt>0)||dt>60) continue;
+    let k=0; while(k<4&&v>=ZONE_P[k]*mx) k++; z[k]+=dt; }
+  const tot=z.reduce((x,y)=>x+y,0); return tot>0?{z,tot,mx}:null;
+}
+function hrZonesHtml(a){
+  const r=hrZones(a); if(!r) return '';
+  const pc=r.z.map(v=>Math.round(v/r.tot*100));
+  return `<div><h3>Zeit in Pulszonen</h3><div class="hrz">${r.z.map((v,i)=>v?`<i style="width:${v/r.tot*100}%;background:${ZONE_C[i]}"></i>`:'').join('')}</div>
+    <div class="hrz-l">${pc.map((p,i)=>`<span><i style="background:${ZONE_C[i]}"></i>Z${i+1} ${p} % · ${fmtDur(r.z[i])}</span>`).join('')}</div>
+    <p class="note">Bezogen auf Maximalpuls ${r.mx}${ls.get('hrMax',0)?'':' (geschätzt aus deinen Touren, in den Einstellungen festlegen)'}.</p></div>`;
+}
+$('#hrPair').onclick=hrPair;
+$('#hrConn').onclick=()=>hrConnect(true);
+$('#hrForget').onclick=async()=>{ await hrDisconnect(); HR.dev=null; ls.set('hr.dev',null); HR.bat=null; hrUI(); toast('Pulsgurt entfernt.'); };
+(()=>{ const f=$('#setHrMax'); if(!f) return; f.value=ls.get('hrMax','')||'';
+  f.addEventListener('change',()=>{ const v=Math.round(+f.value); if(f.value===''){ ls.set('hrMax',0); } else if(v>=120&&v<=230){ ls.set('hrMax',v); } else { toast('Bitte einen Wert zwischen 120 und 230 eingeben.'); f.value=ls.get('hrMax','')||''; return; }
+    if(TOUR.sel&&byId.has(TOUR.sel)) renderTours(); toast('Maximalpuls gespeichert.'); }); })();
+hrUI();
+
 /* ---------- Backup ---------- */
 function actToJSON(a){ return {id:a.id,n:a.n,t:a.t,d:a.d,dist:a.dist,gain:a.gain,dur:a.dur,mv:a.mv,v:a.v||1,bb:a.bb,
-  c:Array.from(a.c,v=>+v.toFixed(6)), e:a.e?Array.from(a.e,v=>isFinite(v)?Math.round(v*10)/10:null):null, ts:a.ts?Array.from(a.ts):undefined}; }
+  c:Array.from(a.c,v=>+v.toFixed(6)), e:a.e?Array.from(a.e,v=>isFinite(v)?Math.round(v*10)/10:null):null, ts:a.ts?Array.from(a.ts):undefined,
+  hr:a.hr?Array.from(a.hr):undefined, hrA:a.hrA, hrM:a.hrM}; }
 function actFromJSON(o){
   if(!o||!Array.isArray(o.c)||o.c.length<4||!o.id) return null;
   return {id:String(o.id),n:o.n||'Tour',t:o.t||'other',d:+o.d,dist:+o.dist||0,gain:+o.gain||0,dur:+o.dur||0,mv:+o.mv||+o.dur||0,v:o.v||(o.e?2:1),
     bb:o.bb,c:Float32Array.from(o.c),e:o.e?Float32Array.from(o.e,v=>v==null?NaN:v):undefined,
-    ts:Array.isArray(o.ts)&&o.ts.length*2===o.c.length?Float64Array.from(o.ts):undefined};
+    ts:Array.isArray(o.ts)&&o.ts.length*2===o.c.length?Float64Array.from(o.ts):undefined,
+    ...(Array.isArray(o.hr)&&o.hr.length*2===o.c.length?{hr:Uint8Array.from(o.hr),hrA:+o.hrA||0,hrM:+o.hrM||0}:{})};
 }
 /* Altes Trail-Log-Backup: p=[[lat,lon,ele|null,Strecke]], t=Start in ms, d=Meter, up=Hoehenmeter, mv/el=Sekunden */
 function actFromLegacy(o){
@@ -1893,7 +2045,7 @@ function widgetPush(force,raw){
     const HIKE=new Set(['hike','walk','snowshoe']), hdays={};
     for(const x of S.acts){ const t=typeKey(x.t); if(x.d<from||!HIKE.has(t)) continue; const k=key(new Date(x.d)), v=hdays[k]||(hdays[k]=[0,0,0]);
       v[0]++; v[1]=Math.round((v[1]+x.dist/1000)*100)/100; v[2]+=Math.round(x.gain||0); }
-    const pr=Promise.resolve(TW.update({running:!!REC.on,start:REC.t0||0,dist:fmt1.format((REC.dist||0)/1000),gain:fmt0.format(REC.gain||0),m:mon,mt,mk,mh,days:JSON.stringify(days),hdays:JSON.stringify(hdays)}));
+    const pr=Promise.resolve(TW.update({running:!!REC.on,start:REC.t0||0,hr:REC.on&&hrLive()?String(hrLive()):'',dist:fmt1.format((REC.dist||0)/1000),gain:fmt0.format(REC.gain||0),m:mon,mt,mk,mh,days:JSON.stringify(days),hdays:JSON.stringify(hdays)}));
     if(raw) return pr;
     pr.catch(e=>{ if(!widgetPush.err){ widgetPush.err=1; toast('Widget: '+String(e&&e.message||e).slice(0,100),6000); } });
   }catch(e){}
