@@ -1165,6 +1165,21 @@ function tourKcal(a){
     if(pm>0) k+=pm*dt/60; }
   return k;
 }
+/* Kalorien ohne Puls geschätzt: Rad über die Arbeit (Höhenmeter, Rollwiderstand, Luftwiderstand, 24 % Wirkungsgrad: 1 kJ Arbeit ≈ 1 kcal),
+   zu Fuß über kcal pro kg und km plus Höhenmeter, sonst Durchschnittswert pro Stunde (MET) */
+const KC_BIKE={mountainbikeride:[0.02,0.6],gravelride:[0.01,0.45],ride:[0.008,0.38],virtualride:[0.006,0.35],emountainbikeride:[0.02,0.6],ebikeride:[0.008,0.5]};
+const KC_MET={run:9.8,trailrun:10,swim:7,alpineski:5.3,backcountryski:8,nordicski:9,workout:5,yoga:2.5,drive:0};
+function tourKcalEst(a){
+  const b=BODY(); if(!(b.w>30)) return 0;
+  const t=typeKey(a.t), h=(moving(a)||0)/3600, km=a.dist/1000, up=a.gain||0;
+  if(KC_BIKE[t]){ if(!(h>0)) return 0; const [crr,cda]=KC_BIKE[t], m=b.w+14, v=a.dist/(h*3600);
+    const J=m*9.81*up + m*9.81*crr*a.dist + 0.5*1.2*cda*v*v*v*h*3600;
+    return J/0.24/4184*(t==='ebikeride'||t==='emountainbikeride'?0.5:1); }
+  if(t==='hike'||t==='walk'||t==='snowshoe') return (0.5*b.w*km + b.w*9.81*up/0.25/4184)*(t==='snowshoe'?1.4:1);
+  const met=KC_MET[t]; return met!=null?met*b.w*h:0;
+}
+/* Kalorien einer Tour: aus Puls wenn möglich, sonst geschätzt */
+function kcalOf(a){ const k=tourKcal(a); return k>0?{k,est:false}:{k:tourKcalEst(a),est:true}; }
 /* Abstände und geglättete Höhe einer Tour (zwischengespeichert) */
 const GEO=new WeakMap();
 function tourGeo(a){
@@ -1292,7 +1307,13 @@ $('#stats').addEventListener('click',e=>{
 function tourLoad(a){ const r=hrZones(a); if(!r) return 0; return r.z.reduce((s,v,i)=>s+v/60*(i+1),0); }
 function hrStatsHtml(f,keys,key,label,per,few){
   const hf=f.filter(a=>a.hrM>0&&a.hr);
-  if(!hf.length) return '';
+  if(!hf.length){ // ältere Zeiträume ohne Puls: nur geschätzte Kalorien
+    let k=0,n=0; for(const a of f){ const r=kcalOf(a); if(r.k){ k+=r.k; n++; } }
+    if(!k) return BODY().w>30?'':'<p class="note">Für Kalorien bitte in den Einstellungen Gewicht, Geburtsjahr und Geschlecht eintragen.</p>';
+    return `<div><h3>Kalorien</h3><div class="tiles"><div class="tile"><div class="v">≈${fmt0.format(k)}<small>kcal</small></div><div class="l">Kalorien (geschätzt)</div></div>
+      <div class="tile"><div class="v">≈${fmt0.format(k/n)}<small>kcal</small></div><div class="l">pro Tour</div></div></div>
+      <p class="note">Ohne Puls geschätzt aus Strecke, Höhenmetern, Tempo, Sportart und Gewicht (${fmt0.format(n)} Touren).</p></div>`;
+  }
   let tw=0,ts=0,mx=0,mxA=null,beats=0,bkm=0; const Z=[0,0,0,0,0]; let zt=0, load=0, kcal=0, recS=0, recN=0; const GR={up:[0,0],fl:[0,0],dn:[0,0]};
   for(const a of hf){
     const mv=moving(a)||0; tw+=a.hrA*mv; ts+=mv;
@@ -1300,7 +1321,7 @@ function hrStatsHtml(f,keys,key,label,per,few){
     const r=hrZones(a); if(r){ r.z.forEach((v,i)=>Z[i]+=v); zt+=r.tot; }
     load+=tourLoad(a);
     if(a.dist>1000&&mv>0){ beats+=a.hrA*mv/60; bkm+=a.dist/1000; }
-    kcal+=tourKcal(a); const rc=tourRecovery(a); if(rc!=null){ recS+=rc; recN++; }
+    const rc=tourRecovery(a); if(rc!=null){ recS+=rc; recN++; }
     const gr=tourHrGrade(a); if(gr) for(const k in GR){ GR[k][0]+=gr[k][0]; GR[k][1]+=gr[k][1]; }
   }
   const gAvg=k=>GR[k][1]>60?fmt0.format(GR[k][0]/GR[k][1]):'–', body=BODY().w>30&&BODY().y>1900;
@@ -1309,7 +1330,9 @@ function hrStatsHtml(f,keys,key,label,per,few){
   const G=new Map(keys.map(k=>[k,{l:0,w:0,t:0,b:0,km:0,kc:0,rs:0,rn:0}]));
   for(const a of hf){ const g=G.get(key(a)); if(!g) continue; const mv=moving(a)||0;
     g.l+=tourLoad(a); g.w+=a.hrA*mv; g.t+=mv; if(a.dist>1000&&mv>0){ g.b+=a.hrA*mv/60; g.km+=a.dist/1000; }
-    g.kc+=tourKcal(a); const rc=tourRecovery(a); if(rc!=null){ g.rs+=rc; g.rn++; } }
+    const rc=tourRecovery(a); if(rc!=null){ g.rs+=rc; g.rn++; } }
+  // Kalorien über alle Touren des Zeitraums: aus Puls oder geschätzt
+  let kN=0,kE=0; for(const a of f){ const r=kcalOf(a); if(!r.k) continue; kcal+=r.k; r.est?kE++:kN++; const g=G.get(key(a)); if(g) g.kc+=r.k; }
   const val=g=>P==='load'?g.l:P==='avg'?(g.t?g.w/g.t:0):P==='kcal'?g.kc:P==='rec'?(g.rn?g.rs/g.rn:0):(g.km?g.b/g.km:0);
   const vals=keys.map(k=>val(G.get(k))), vmax=Math.max(0,...vals), vmin=P==='load'?0:Math.min(...vals.filter(v=>v>0));
   const fv=v=>P==='load'?fmt0.format(v):fmt0.format(v);
@@ -1320,7 +1343,7 @@ function hrStatsHtml(f,keys,key,label,per,few){
   const nm={load:'Belastung',avg:'Ø Puls',eff:'Herzschläge pro km',kcal:'Kalorien',rec:'Erholung (Pulsabfall in 1 min)'}[P];
   const note={load:'Belastung: Minuten in Zone 1–5, mal 1–5 gewichtet. Je höher, desto anstrengender.',
     avg:'Ø Puls über die Bewegungszeit.',eff:'Herzschläge pro Kilometer. Sinkt der Wert bei ähnlichen Touren, bist du fitter geworden.',
-    kcal:body?'Verbrauch aus Puls, Gewicht und Alter geschätzt.':'Für Kalorien bitte in den Einstellungen Gewicht, Geburtsjahr und Geschlecht eintragen.',
+    kcal:body?`Aus Puls berechnet: ${fmt0.format(kN)} Touren, ohne Puls geschätzt: ${fmt0.format(kE)} Touren.`:'Für Kalorien bitte in den Einstellungen Gewicht, Geburtsjahr und Geschlecht eintragen.',
     rec:'Wie viele Schläge der Puls in der ersten Minute nach einem Anstieg fällt. Mehr ist besser.'}[P];
   return `<div class="hrst">
     <h3>Puls</h3>
@@ -1329,7 +1352,7 @@ function hrStatsHtml(f,keys,key,label,per,few){
       <div class="tile"><div class="v hrv">${fmt0.format(mx)}<small>bpm</small></div><div class="l">Max. Puls</div></div>
       <div class="tile"><div class="v">${fmt0.format(load)}</div><div class="l">Belastung</div></div>
       <div class="tile"><div class="v">${bkm?fmt0.format(beats/bkm):'–'}</div><div class="l">Schläge pro km</div></div>
-      <div class="tile"><div class="v">${body&&kcal?fmt0.format(kcal):'–'}<small>kcal</small></div><div class="l">Kalorien</div></div>
+      <div class="tile"><div class="v">${body&&kcal?(kE&&!kN?'≈':'')+fmt0.format(kcal):'–'}<small>kcal</small></div><div class="l">Kalorien${kE&&kN?' (teils geschätzt)':kE?' (geschätzt)':''}</div></div>
       <div class="tile"><div class="v">${recN?'−'+fmt0.format(recS/recN):'–'}<small>bpm</small></div><div class="l">Erholung 1 min</div></div>
     </div>
     ${body?'':'<p class="note">Kalorien: Gewicht, Geburtsjahr und Geschlecht in den Einstellungen eintragen.</p>'}
@@ -1337,7 +1360,7 @@ function hrStatsHtml(f,keys,key,label,per,few){
       <dt>Ø Puls</dt><dd>Mittel über die Bewegungszeit aller Touren mit Puls, längere Touren zählen stärker.</dd>
       <dt>Belastung</dt><dd>Minuten in jeder Pulszone mal Zonennummer (Z1 ×1 bis Z5 ×5), zusammengezählt. Eine Stunde locker in Z2 ergibt 120, eine Stunde hart in Z4 ergibt 240.</dd>
       <dt>Schläge pro km</dt><dd>Ø Puls × Bewegungszeit in Minuten ÷ Kilometer. Vergleichbar nur bei ähnlichen Touren, sinkt der Wert, bist du fitter.</dd>
-      <dt>Kalorien</dt><dd>Geschätzt aus Puls, Gewicht, Alter und Geschlecht (Formel nach Keytel), Sekunde für Sekunde. Grobe Schätzung, etwa ±20 %.</dd>
+      <dt>Kalorien</dt><dd>Mit Puls: aus Puls, Gewicht, Alter und Geschlecht (Formel nach Keytel), Sekunde für Sekunde. Ohne Puls geschätzt: beim Rad aus der Arbeit für Höhenmeter (dein Gewicht + 14 kg Rad), Rollwiderstand und Luftwiderstand bei deinem Tempo; der Körper setzt etwa ein Viertel der Energie in Vortrieb um (E-Bike: die Hälfte). „Radfahrt“ rechnet mit Mittelwerten zwischen Rennrad und MTB. Zu Fuß 0,5 kcal pro kg und km plus Höhenmeter. Beides grobe Schätzungen, etwa ±20–30 %.</dd>
       <dt>Erholung 1 min</dt><dd>Höchster Puls in den letzten 30 s eines Anstiegs minus Puls 60 s danach. Mittel über alle Anstiege. Je größer, desto besser erholst du dich.</dd>
       <dt>Pulszonen</dt><dd>Anteile vom Maximalpuls (Einstellungen): Z1 unter 60 %, Z2 60–70 %, Z3 70–80 %, Z4 80–90 %, Z5 ab 90 %.</dd>
     </dl></details>
@@ -1874,9 +1897,9 @@ function renderDetail(a){
       <div class="tile"><div class="v">${fmt0.format(a.gain)}<small>Hm</small></div><div class="l">Aufstieg</div></div>
       <div class="tile"><div class="v sm">${fmtDur(mt)}</div><div class="l">Bewegungszeit</div></div>
       <div class="tile"><div class="v">${sp?fmt1.format(sp):'–'}<small>km/h</small></div><div class="l">Ø Tempo</div></div>
+      ${(()=>{ const r=kcalOf(a); return r.k?`<div class="tile"><div class="v">${r.est?'≈':''}${fmt0.format(r.k)}<small>kcal</small></div><div class="l">Kalorien${r.est?' (geschätzt)':''}</div></div>`:''; })()}
       ${a.hrM?`<div class="tile"><div class="v hrv">${a.hrA}<small>bpm</small></div><div class="l">Ø Puls</div></div>
       <div class="tile"><div class="v hrv">${a.hrM}<small>bpm</small></div><div class="l">Max. Puls</div></div>
-      ${tourKcal(a)?`<div class="tile"><div class="v">${fmt0.format(tourKcal(a))}<small>kcal</small></div><div class="l">Kalorien</div></div>`:''}
       ${tourRecovery(a)!=null?`<div class="tile"><div class="v">−${fmt0.format(tourRecovery(a))}<small>bpm</small></div><div class="l">Erholung 1 min</div></div>`:''}`:''}
     </div>
     ${phStrip(a)}
