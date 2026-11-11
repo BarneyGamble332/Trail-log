@@ -1409,6 +1409,9 @@ jobs:
                 '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" tools:remove="android:maxSdkVersion" />\n'
                 '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" tools:remove="android:maxSdkVersion" />\n</manifest>')
           s=s.replace('</manifest>',perm,1)
+          # Abgleich mit dem PC im Heimnetz läuft über http://<PC>:8787
+          if 'usesCleartextTraffic' not in s:
+              s=s.replace('<application ','<application android:usesCleartextTraffic="true" ',1)
           if 'xmlns:tools=' not in s:
               s=s.replace('<manifest ','<manifest xmlns:tools="http://schemas.android.com/tools" ',1)
           open(m,'w').write(s)

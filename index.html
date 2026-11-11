@@ -276,6 +276,10 @@ canvas.prof{width:100%;height:120px;display:block;touch-action:none;cursor:cross
 .prof-cur i{position:absolute;left:-6px;width:10px;height:10px;margin-top:-5px;border-radius:50%;background:#ff8f00;border:2px solid #fff}
 .prof-tip{position:absolute;top:-20px;white-space:nowrap;font:600 11px var(--f-num);background:var(--ink);color:var(--bg);padding:2px 7px;border-radius:6px;pointer-events:none;z-index:2}
 #sheet.open.scrub .panes{max-height:200px}
+.sync-pc{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;align-items:baseline;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--bg)}
+.sync-pc span{font:600 12px var(--f-body);color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.sync-pc b{font:600 22px/1.2 var(--f-num);color:var(--ink)}
+#syncState{color:var(--ink)}
 .prof-zoom{position:absolute;right:0;top:-47px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font:600 11px var(--f-body);padding:2px 8px;border-radius:6px;cursor:pointer}
 .chart{display:flex;align-items:flex-end;gap:5px;height:170px;margin-top:12px;border-bottom:1px solid var(--line)}
 .chart .c{flex:1;min-width:0;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center}
@@ -478,6 +482,17 @@ canvas.prof{width:100%;height:120px;display:block;touch-action:none;cursor:cross
         <h3 style="margin:0">Offline-Karten (MTB)</h3>
         <div id="kartenList" class="stack"><p class="note">Wird geladen …</p></div>
         <p class="note">Die MTB-Karte entsteht aus OpenStreetMap und Höhendaten und wird jeden Monat neu gebaut. Nach dem Download geht sie ohne Netz. Anzeigen: Karte → Hintergrund → Offline. Tippst du auf einen Weg, siehst du S-Skala, Untergrund und Wegzustand.</p>
+      </div>
+      <div class="stack" id="syncBox" hidden>
+        <h3 style="margin:0" id="syncH">Mit PC abgleichen</h3>
+        <div class="stack" id="syncPhone" hidden>
+          <div class="row2" style="grid-template-columns:minmax(0,1fr) 92px"><label class="fld" style="min-width:0">Adresse des PCs<input class="sel" id="syncHost" inputmode="decimal" autocomplete="off" placeholder="z. B. 192.168.178.20"></label>
+            <label class="fld">Code<input class="sel" id="syncCode" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="4711"></label></div>
+          <button class="btn primary" id="btnSync">Jetzt abgleichen</button>
+        </div>
+        <div class="sync-pc" id="syncPcCard" hidden><span>Adresse</span><b id="syncPcIp">…</b><span>Code</span><b id="syncPcCode">…</b></div>
+        <p class="note" id="syncState" hidden></p>
+        <p class="note" id="syncHelp"></p>
       </div>
       <div class="stack">
         <h3 style="margin:0">Backup</h3>
@@ -2405,18 +2420,24 @@ function actFromLegacy(o){
   o.p.forEach((q,i)=>{ c[2*i]=q[0]; c[2*i+1]=q[1]; e[i]=q[2]==null?NaN:q[2]; if(q[0]<s)s=q[0]; if(q[0]>nn)nn=q[0]; if(q[1]<w)w=q[1]; if(q[1]>ee)ee=q[1]; });
   return {id:'tl_'+o.id,n:o.name||'Tour',t:typeKey(o.type),d:+o.t,dist:+o.d||0,gain:+o.up||0,dur:+o.el||0,mv:+o.mv||+o.el||0,v:2,bb:[s,w,nn,ee],c,e};
 }
+/* Neue Touren übernehmen; gleiche Tour = gleiche Nummer oder gleicher Start (±1 min) und gleiche Strecke (±3 %) */
+const sameTour=(d1,m1,d2,m2)=>Math.abs(d1-d2)<60000&&Math.abs(m1-m2)<=0.03*Math.max(m1,1);
+async function mergeActs(arr){
+  const known=new Set(S.acts.map(a=>a.id)), fresh=[]; let dup=0;
+  for(const a of arr){
+    if(!a||!isFinite(a.d)||!a.bb) continue;
+    if(known.has(a.id)||S.acts.some(b=>sameTour(b.d,b.dist,a.d,a.dist))||fresh.some(b=>sameTour(b.d,b.dist,a.d,a.dist))){ dup++; continue; }
+    fresh.push(a); known.add(a.id);
+  }
+  if(fresh.length){ S.acts.push(...fresh); await idb.put('acts',fresh).catch(()=>{}); actsChanged(); }
+  return {fresh,dup};
+}
 async function importBackup(f){
   try{
     const j=JSON.parse(await f.text());
     const arr=Array.isArray(j)?j.map(actFromLegacy):(j&&Array.isArray(j.acts)?j.acts.map(actFromJSON):null);
     if(!arr) throw new Error('Format');
-    const known=new Set(S.acts.map(a=>a.id)), fresh=[]; let dup=0;
-    for(const a of arr){
-      if(!a||!isFinite(a.d)||!a.bb) continue;
-      const same=known.has(a.id)||S.acts.some(b=>Math.abs(b.d-a.d)<60000&&Math.abs(b.dist-a.dist)<=0.03*Math.max(b.dist,1));
-      if(same){ dup++; continue; } fresh.push(a); known.add(a.id);
-    }
-    S.acts.push(...fresh); await idb.put('acts',fresh).catch(()=>{}); actsChanged(); if(fresh.length) fitActs();
+    const {fresh,dup}=await mergeActs(arr); if(fresh.length) fitActs();
     toast(`${fresh.length} Touren aus dem Backup geladen`+(dup?`, ${dup} schon vorhanden`:'')+'.',5000);
   }catch(e){ toast('Die Backup-Datei konnte nicht gelesen werden.',5000); }
 }
@@ -2430,6 +2451,67 @@ $('#btnBackup').onclick=async()=>{
 };
 $('#btnBackupIn').onclick=()=>$('#bakInput').click();
 $('#bakInput').addEventListener('change',async e=>{ const f=e.target.files[0]; e.target.value=''; if(f) await importBackup(f); });
+
+/* ---------- Abgleich Handy ↔ PC übers WLAN ----------
+   Die Linux-Version wartet auf Port 8787. Das Handy fragt, welche Touren der PC hat,
+   schickt ihm die fehlenden und holt sich die, die nur am PC sind. Gelöscht wird nichts. */
+const SYNC_PORT=8787;
+function syncState(t){ const n=$('#syncState'); n.hidden=!t; n.textContent=t||''; }
+const hhmm=()=>new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});
+async function syncReq(path,body){
+  const st=ls.get('syncPc',{}), url=`http://${st.host}:${SYNC_PORT}/tl/${path}`;
+  const headers={'Content-Type':'application/json','X-Code':String(st.code||'')};
+  let status, data;
+  if(NATIVE){ const H=nativePlugin('CapacitorHttp'); if(!H) throw new Error('Netzwerk-Plugin fehlt');
+    const r=await H.request({url,method:'POST',headers,data:body||{},connectTimeout:5000,readTimeout:180000}); status=r.status; data=typeof r.data==='string'?JSON.parse(r.data||'{}'):r.data; }
+  else { const r=await fetch(url,{method:'POST',headers,body:JSON.stringify(body||{})}); status=r.status; data=await r.json().catch(()=>({})); }
+  if(status===403) throw new Error('code'); if(status!==200) throw new Error((data&&data.error)||('HTTP '+status));
+  return data;
+}
+async function syncRun(){
+  const host=$('#syncHost').value.trim().replace(/^https?:\/\//,'').replace(/[:/].*$/,''), code=$('#syncCode').value.trim();
+  if(!/^[\w.-]+$/.test(host)||!/^\d{4}$/.test(code)){ syncState('Bitte Adresse und den 4-stelligen Code vom PC eintragen.'); return; }
+  ls.set('syncPc',{host,code}); const btn=$('#btnSync'); btn.disabled=true;
+  try{
+    syncState('Verbinde mit dem PC …');
+    const L=await syncReq('list'), pc=Array.isArray(L.acts)?L.acts:[], pcIds=new Set(pc.map(x=>x[0]));
+    const send=S.acts.filter(a=>!pcIds.has(a.id)&&!pc.some(x=>sameTour(x[1],x[2],a.d,a.dist)));
+    const want=pc.filter(x=>!S.acts.some(b=>b.id===x[0]||sameTour(b.d,b.dist,x[1],x[2]))).map(x=>x[0]);
+    const B=12; let sent=0, got=0;
+    for(let i=0;i<send.length;i+=B){ syncState(`Sende Touren an den PC … ${i}/${send.length}`);
+      const r=await syncReq('put',{acts:send.slice(i,i+B).map(actToJSON)}); sent+=+r.added||0; }
+    for(let i=0;i<want.length;i+=B){ syncState(`Hole Touren vom PC … ${i}/${want.length}`);
+      const r=await syncReq('get',{ids:want.slice(i,i+B)}); const m=await mergeActs((r.acts||[]).map(actFromJSON)); got+=m.fresh.length; }
+    await syncReq('done',{sent,got}).catch(()=>{});
+    const t=`Abgeglichen um ${hhmm()} · ${sent} an den PC, ${got} vom PC`+(sent||got?'':' (alles schon gleich)');
+    ls.set('syncLast',t); syncState(t);
+  }catch(e){
+    const m=String(e&&e.message||e);
+    syncState(m==='code'?'Der Code passt nicht. Er steht am PC unter Einstellungen › Mit Handy abgleichen.':
+      /timeout|timed out|connect|refused|unreachable|failed|network/i.test(m)?'PC nicht erreichbar. Läuft Trail Log am PC, und sind beide im selben WLAN? Adresse prüfen.':'Abgleich abgebrochen: '+m.slice(0,120));
+  }finally{ btn.disabled=false; }
+}
+if(window.desktop&&desktop.onSync){ // Linux-Version: wartet auf das Handy
+  $('#syncBox').hidden=false; $('#syncH').textContent='Mit Handy abgleichen'; $('#syncPcCard').hidden=false;
+  $('#syncHelp').textContent='In der Handy-App unter Einstellungen › Mit PC abgleichen Adresse und Code eintragen, dann „Jetzt abgleichen“. Beide müssen im selben WLAN sein. Neue Touren gehen in beide Richtungen, gelöscht wird nichts.';
+  desktop.syncInfo().then(i=>{ $('#syncPcIp').textContent=i.ips.length?i.ips.join(', '):'kein Netzwerk'; $('#syncPcCode').textContent=i.code;
+    if(!i.ok) syncState('Der Abgleich konnte nicht starten (Port '+SYNC_PORT+' belegt?).'); else if(ls.get('syncLast')) syncState(ls.get('syncLast')); });
+  let inc=0;
+  desktop.onSync(async(op,data)=>{
+    if(op==='list') return {acts:S.acts.map(a=>[a.id,a.d,a.dist])};
+    if(op==='get'){ const ids=new Set(Array.isArray(data.ids)?data.ids:[]); return {acts:S.acts.filter(a=>ids.has(a.id)).map(actToJSON)}; }
+    if(op==='put'){ const m=await mergeActs((Array.isArray(data.acts)?data.acts:[]).map(actFromJSON)); inc+=m.fresh.length; syncState(`Empfange Touren vom Handy … ${inc}`); return {added:m.fresh.length,dup:m.dup}; }
+    if(op==='done'){ const t=`Abgeglichen um ${hhmm()} · ${+data.sent||0} vom Handy, ${+data.got||0} ans Handy`; inc=0; ls.set('syncLast',t); syncState(t);
+      if(+data.sent) { fitActs(); toast(`${data.sent} neue Touren vom Handy`,5000); } return {ok:true}; }
+    throw new Error('unbekannt');
+  });
+} else if(NATIVE){
+  $('#syncBox').hidden=false; $('#syncPhone').hidden=false;
+  const st=ls.get('syncPc',{}); $('#syncHost').value=st.host||''; $('#syncCode').value=st.code||'';
+  $('#syncHelp').textContent='Trail Log am PC öffnen, beide im selben WLAN. Adresse und Code stehen am PC unter Einstellungen › Mit Handy abgleichen. Neue Touren gehen in beide Richtungen, gelöscht wird nichts.';
+  if(ls.get('syncLast')) syncState(ls.get('syncLast'));
+  $('#btnSync').onclick=syncRun;
+}
 
 /* ---------- Darstellung ---------- */
 function applyTheme(){

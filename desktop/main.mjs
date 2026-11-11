@@ -2,6 +2,9 @@
 // Die Oberfläche ist dieselbe index.html wie in der Android-App.
 import { app, BrowserWindow, ipcMain, shell, session } from 'electron';
 import fs from 'node:fs';
+import http from 'node:http';
+import os from 'node:os';
+import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -62,3 +65,55 @@ ipcMain.handle('saveFile', async (e, name, data, where) => {
   return p;
 });
 ipcMain.handle('openPath', (e, p) => (typeof p === 'string' ? shell.showItemInFolder(p) : null));
+
+/* ---------- Abgleich mit dem Handy übers WLAN ----------
+   Das Handy schickt POST /tl/list|get|put|done mit dem Code im Kopf "X-Code".
+   Die Touren liegen in der Oberfläche (IndexedDB), deshalb wird jede Anfrage dorthin weitergereicht. */
+const SYNC_PORT = 8787;
+let syncOk = false, rid = 0, fails = [];
+const pending = new Map();
+function syncCode() {
+  const s = readJSON('settings.json', {});
+  if (!/^\d{4}$/.test(s.code || '')) { s.code = String(crypto.randomInt(1000, 10000)); writeJSON('settings.json', s); }
+  return s.code;
+}
+function ips() {
+  return Object.values(os.networkInterfaces()).flat()
+    .filter(i => i && i.family === 'IPv4' && !i.internal && !/^(172\.(1[7-9]|2\d|3[01])|169\.254)\./.test(i.address))
+    .map(i => i.address);
+}
+function ask(op, data) {
+  return new Promise((res, rej) => {
+    if (!win) return rej(new Error('Fenster fehlt'));
+    const id = ++rid; pending.set(id, { res, rej });
+    win.webContents.send('sync-req', { rid: id, op, data });
+    setTimeout(() => { if (pending.delete(id)) rej(new Error('Zeitüberschreitung')); }, 120000);
+  });
+}
+ipcMain.on('sync-res', (e, { rid: id, ok, r }) => { const p = pending.get(id); if (!p) return; pending.delete(id); ok ? p.res(r) : p.rej(new Error(r)); });
+ipcMain.handle('syncInfo', async () => {
+  const ok = syncOk || await Promise.race([listening, new Promise(r => setTimeout(() => r(false), 3000))]);
+  return { ips: ips(), code: syncCode(), port: SYNC_PORT, ok };
+});
+
+const server = http.createServer((req, res) => {
+  const send = (c, o) => { res.writeHead(c, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)); };
+  const m = /^\/tl\/(list|get|put|done)$/.exec(req.url || '');
+  if (req.method !== 'POST' || !m) return send(404, { error: 'unbekannt' });
+  const now = Date.now(); fails = fails.filter(t => now - t < 60000);
+  if (fails.length >= 10) return send(429, { error: 'zu viele Versuche, kurz warten' });
+  if (req.headers['x-code'] !== syncCode()) { fails.push(now); return send(403, { error: 'code' }); }
+  const chunks = []; let size = 0;
+  req.on('data', c => { size += c.length; if (size > 200e6) req.destroy(); else chunks.push(c); });
+  req.on('end', async () => {
+    let data = {};
+    try { data = chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {}; } catch { return send(400, { error: 'json' }); }
+    try { send(200, await ask(m[1], data)); } catch (err) { send(500, { error: String(err.message || err) }); }
+  });
+});
+const listening = new Promise(r => {
+  server.on('error', err => { syncOk = false; console.warn('Abgleich:', err.message); r(false); });
+  server.on('listening', () => { syncOk = true; r(true); });
+});
+app.whenReady().then(() => server.listen(SYNC_PORT, '0.0.0.0'));
+app.on('will-quit', () => server.close());
