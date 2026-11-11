@@ -275,7 +275,8 @@ canvas.prof{width:100%;height:120px;display:block;touch-action:none;cursor:cross
 .prof-cur{position:absolute;top:0;bottom:16px;width:0;border-left:2px solid #ff8f00;pointer-events:none}
 .prof-cur i{position:absolute;left:-6px;width:10px;height:10px;margin-top:-5px;border-radius:50%;background:#ff8f00;border:2px solid #fff}
 .prof-tip{position:absolute;top:-20px;white-space:nowrap;font:600 11px var(--f-num);background:var(--ink);color:var(--bg);padding:2px 7px;border-radius:6px;pointer-events:none;z-index:2}
-.prof-range{width:100%;margin:6px 0 0;accent-color:#ff8f00}
+#sheet.open.scrub .panes{max-height:200px}
+.prof-zoom{position:absolute;right:0;top:-47px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font:600 11px var(--f-body);padding:2px 8px;border-radius:6px;cursor:pointer}
 .chart{display:flex;align-items:flex-end;gap:5px;height:170px;margin-top:12px;border-bottom:1px solid var(--line)}
 .chart .c{flex:1;min-width:0;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center}
 .chart i{display:block;width:100%;max-width:38px;border-radius:6px 6px 2px 2px;background:linear-gradient(180deg,var(--sign),color-mix(in srgb,var(--sign) 45%,transparent));transform-origin:bottom;animation:grow .6s cubic-bezier(.2,.8,.2,1) both}
@@ -1506,6 +1507,7 @@ document.querySelector('.tabs').addEventListener('click',e=>{ const b=e.target.c
   const was=b.classList.contains('on'); openTab(b.dataset.tab);
   if(was&&sheet.classList.contains('open')&&window.innerWidth<900) sheet.classList.remove('open'); else sheet.classList.add('open'); });
 $('#handle').onclick=()=>sheet.classList.toggle('open');
+sheet.addEventListener('pointerdown',e=>{ if(sheet.classList.contains('scrub')&&!e.target.closest('.profw')){ sheet.classList.remove('scrub'); setTimeout(()=>map.invalidateSize(),280); } },true);
 const setPeek=()=>{ const h=$('#sheetHead').offsetHeight; document.documentElement.style.setProperty('--peek',(window.innerWidth<900?h:0)+'px'); map.invalidateSize(); };
 new ResizeObserver(setPeek).observe($('#sheetHead')); window.addEventListener('resize',setPeek);
 
@@ -1908,8 +1910,8 @@ function renderDetail(a){
       ${tourRecovery(a)!=null?`<div class="tile"><div class="v">−${fmt0.format(tourRecovery(a))}<small>bpm</small></div><div class="l">Erholung 1 min</div></div>`:''}`:''}
     </div>
     ${phStrip(a)}
-    <div><h3>${a.hr?'Höhe und Puls':'Höhenprofil'}</h3><div class="profw"><div class="prof-tip" id="profTip" hidden></div><canvas id="prof" class="prof"></canvas><div class="prof-cur" id="profCur" hidden><i id="profDot"></i></div></div>
-      <input type="range" class="prof-range" id="profRange" min="0" max="1000" value="0" aria-label="Position im Höhenprofil"><p class="note" id="profNote" hidden></p></div>
+    <div id="profBox"><h3>${a.hr?'Höhe und Puls':'Höhenprofil'}</h3><div class="profw"><div class="prof-tip" id="profTip" hidden></div><canvas id="prof" class="prof"></canvas><button class="prof-zoom" id="profZoom" hidden>Ganze Tour</button><div class="prof-cur" id="profCur" hidden><i id="profDot"></i></div></div>
+      <p class="note" id="profNote" hidden></p></div>
     ${hrZonesHtml(a)}
     <button class="btn" id="tFit">Auf Karte zeigen</button>
     <button class="btn danger" id="tDel">Tour löschen</button>
@@ -1921,27 +1923,39 @@ function drawProfile(cv,a){
   const msg=t=>{ cv.hidden=true; note.hidden=false; note.textContent=t; };
   if(!a.e){ msg('Für diese Tour liegen noch keine Höhendaten vor. Den Strava-Export im Tab „Daten“ erneut laden, dann werden sie ergänzt.'); return; }
   cv.hidden=false; note.hidden=true;
-  const c=a.c, e=a.e, n=e.length, X=new Float64Array(n), Y=new Float64Array(n); let d=0, mn=Infinity, mxv=-Infinity;
+  const c=a.c, e=a.e, n=e.length, X=new Float64Array(n), Y=new Float64Array(n); let d=0, ok=false;
   for(let i=1;i<n;i++){ const dx=(c[2*i+1]-c[2*i-1])*Math.cos(c[2*i]*D2R)*111320, dy=(c[2*i]-c[2*i-2])*110540, s=Math.hypot(dx,dy); if(s<GAP_M) d+=s; X[i]=d; }
-  for(let i=0;i<n;i++){ let s=0,k=0; for(let j=Math.max(0,i-3);j<=Math.min(n-1,i+3);j++) if(isFinite(e[j])){ s+=e[j]; k++; } Y[i]=k?s/k:NaN; if(k){ if(Y[i]<mn) mn=Y[i]; if(Y[i]>mxv) mxv=Y[i]; } }
-  if(!isFinite(mn)){ msg('In dieser Tour sind keine Höhendaten enthalten.'); return; }
+  for(let i=0;i<n;i++){ let s=0,k=0; for(let j=Math.max(0,i-3);j<=Math.min(n-1,i+3);j++) if(isFinite(e[j])){ s+=e[j]; k++; } Y[i]=k?s/k:NaN; if(k) ok=true; }
+  if(!ok){ msg('In dieser Tour sind keine Höhendaten enthalten.'); return; }
+  let H=null; if(a.hr&&a.hr.length===n){ H=new Float64Array(n); let any=false;
+    for(let i=0;i<n;i++){ let s=0,k=0; for(let j=Math.max(0,i-3);j<=Math.min(n-1,i+3);j++) if(a.hr[j]>0){ s+=a.hr[j]; k++; } H[i]=k?s/k:NaN; if(k) any=true; }
+    if(!any) H=null; }
+  const D=d||1; cv._P={X,Y,H,n,D,w,h,a,v0:0,v1:D}; profRender(cv);
+}
+/* Zeichnet das Profil für den sichtbaren Ausschnitt v0..v1 (Meter), Höhe passt sich dem Ausschnitt an */
+function profRender(cv){
+  const P=cv._P; if(!P) return; const {X,Y,H,n,w,h,a,v0,v1}=P;
   const dpr=Math.min(window.devicePixelRatio||1,2); cv.width=w*dpr; cv.height=h*dpr;
   const g=cv.getContext('2d'); g.scale(dpr,dpr);
-  const D=d||1, px=i=>X[i]/D*(w-6)+3, base=h-16, py=v=>base-(v-mn)/((mxv-mn)||1)*(h-34)-4;
-  g.beginPath(); let started=false, last=0;
-  for(let i=0;i<n;i++){ if(!isFinite(Y[i])) continue; if(!started){ g.moveTo(px(i),base); g.lineTo(px(i),py(Y[i])); started=true; } else g.lineTo(px(i),py(Y[i])); last=i; }
+  let i0=0; while(i0<n-1&&X[i0+1]<v0) i0++; let i1=n-1; while(i1>0&&X[i1-1]>v1) i1--;
+  let mn=Infinity,mxv=-Infinity; for(let i=i0;i<=i1;i++) if(isFinite(Y[i])){ if(Y[i]<mn) mn=Y[i]; if(Y[i]>mxv) mxv=Y[i]; }
+  if(!isFinite(mn)){ mn=0; mxv=1; }
+  const span=(v1-v0)||1, px=i=>(X[i]-v0)/span*(w-6)+3, base=h-16, py=v=>base-(v-mn)/((mxv-mn)||1)*(h-34)-4;
+  Object.assign(P,{px,py,base,i0,i1});
+  g.save(); g.beginPath(); g.rect(0,0,w,h); g.clip();
+  g.beginPath(); let started=false, last=i0;
+  for(let i=i0;i<=i1;i++){ if(!isFinite(Y[i])) continue; if(!started){ g.moveTo(px(i),base); g.lineTo(px(i),py(Y[i])); started=true; } else g.lineTo(px(i),py(Y[i])); last=i; }
   g.lineTo(px(last),base); g.closePath(); g.fillStyle=cssVar('--sign'); g.globalAlpha=.45; g.fill(); g.globalAlpha=1;
-  g.beginPath(); started=false; for(let i=0;i<n;i++){ if(!isFinite(Y[i])) continue; started?g.lineTo(px(i),py(Y[i])):g.moveTo(px(i),py(Y[i])); started=true; }
+  g.beginPath(); started=false; for(let i=i0;i<=i1;i++){ if(!isFinite(Y[i])) continue; started?g.lineTo(px(i),py(Y[i])):g.moveTo(px(i),py(Y[i])); started=true; }
   g.strokeStyle=cssVar('--ink'); g.lineWidth=1.5; g.lineJoin='round'; g.stroke();
   g.fillStyle=cssVar('--muted'); g.font='11px '+cssVar('--f-num'); g.textBaseline='alphabetic';
-  g.textAlign='left'; g.fillText(Math.round(mxv)+' m',4,11); g.fillText(Math.round(mn)+' m',4,h-3);
-  g.textAlign='right'; g.fillText(fmt1.format(D/1000)+' km',w-4,h-3);
-  if(a.hr&&a.hr.length===n){ // Pulskurve, eigene Skala rechts
-    const H=new Float64Array(n); let hmn=Infinity,hmx=-Infinity;
-    for(let i=0;i<n;i++){ let s=0,k=0; for(let j=Math.max(0,i-3);j<=Math.min(n-1,i+3);j++) if(a.hr[j]>0){ s+=a.hr[j]; k++; } H[i]=k?s/k:NaN; if(k){ if(H[i]<hmn) hmn=H[i]; if(H[i]>hmx) hmx=H[i]; } }
+  g.textAlign='left'; g.fillText(Math.round(mxv)+' m',4,11); g.fillText(Math.round(mn)+' m'+(v0>1?'  ·  ab '+fmt1.format(v0/1000)+' km':''),4,h-3);
+  g.textAlign='right'; g.fillText(fmt1.format(v1/1000)+' km',w-4,h-3);
+  if(H){ // Pulskurve, eigene Skala rechts
+    let hmn=Infinity,hmx=-Infinity; for(let i=i0;i<=i1;i++) if(isFinite(H[i])){ if(H[i]<hmn) hmn=H[i]; if(H[i]>hmx) hmx=H[i]; }
     if(isFinite(hmn)){
       const hy=v=>base-(v-hmn)/((hmx-hmn)||1)*(h-34)-4;
-      g.beginPath(); let st=false; for(let i=0;i<n;i++){ if(!isFinite(H[i])){ st=false; continue; } st?g.lineTo(px(i),hy(H[i])):g.moveTo(px(i),hy(H[i])); st=true; }
+      g.beginPath(); let st=false; for(let i=i0;i<=i1;i++){ if(!isFinite(H[i])){ st=false; continue; } st?g.lineTo(px(i),hy(H[i])):g.moveTo(px(i),hy(H[i])); st=true; }
       g.strokeStyle='#d32f2f'; g.lineWidth=1.6; g.stroke();
       g.fillStyle='#d32f2f'; g.textAlign='right'; g.fillText(Math.round(hmx)+' bpm',w-4,11);
     }
@@ -1949,12 +1963,13 @@ function drawProfile(cv,a){
   // Gipfel, an denen die Tour vorbeikommt (bis 150 m), mit Namen
   const pk=profPeaks(a), placed=[];
   g.font='600 10px '+cssVar('--f-body'); g.textAlign='center';
-  for(const q of pk){ const x=px(q.i), y=isFinite(Y[q.i])?py(Y[q.i]):base;
+  for(const q of pk){ if(q.i<i0||q.i>i1) continue; const x=px(q.i), y=isFinite(Y[q.i])?py(Y[q.i]):base;
     g.fillStyle='#6b3a1e'; g.beginPath(); g.moveTo(x,y-3); g.lineTo(x-4,y-10); g.lineTo(x+4,y-10); g.closePath(); g.fill();
     const tw=g.measureText(q.name).width; if(placed.some(v=>Math.abs(v-x)<(tw/2+30))) continue; placed.push(x);
     const tx=Math.min(w-tw/2-2,Math.max(tw/2+2,x)), ty=Math.max(22,y-14);
     g.lineWidth=3; g.strokeStyle=cssVar('--bg'); g.strokeText(q.name,tx,ty); g.fillStyle='#6b3a1e'; g.fillText(q.name,tx,ty); }
-  cv._P={X,Y,n,D,px,py,base,w,h,a};
+  g.restore();
+  const zb=$('#profZoom'); if(zb) zb.hidden=!(v0>1||v1<P.D-1);
 }
 /* Gipfel nahe der Strecke: nächster Punkt der Tour, max. 150 m */
 function profPeaks(a){
@@ -1969,7 +1984,7 @@ function profPeaks(a){
 const profMk=L.layerGroup().addTo(map);
 function profAt(f){
   const cv=$('#prof'), P=cv&&cv._P; if(!P) return; const a=P.a;
-  let i=0; const target=f*P.D; while(i<P.n-1&&P.X[i+1]<=target) i++;
+  let i=0; const target=P.v0+f*(P.v1-P.v0); while(i<P.n-1&&P.X[i+1]<=target) i++;
   const x=P.px(i), cur=$('#profCur'), tip=$('#profTip'); cur.hidden=false; tip.hidden=false; cur.style.left=x+'px';
   if(isFinite(P.Y[i])){ $('#profDot').style.top=P.py(P.Y[i])+'px'; }
   let gr=''; { let j=i; while(j>0&&P.X[i]-P.X[j]<100) j--; const run=P.X[i]-P.X[j]; if(run>40&&isFinite(P.Y[i])&&isFinite(P.Y[j])) gr=fmt0.format((P.Y[i]-P.Y[j])/run*100)+' %'; }
@@ -1979,17 +1994,39 @@ function profAt(f){
   const tw=tip.offsetWidth; tip.style.left=Math.min(P.w-tw,Math.max(0,x-tw/2))+'px';
   profMk.clearLayers(); L.circleMarker([a.c[2*i],a.c[2*i+1]],{pane:'route',interactive:false,radius:8,color:'#fff',weight:3,fillColor:'#ff8f00',fillOpacity:1}).addTo(profMk);
 }
-function profHide(){ profMk.clearLayers(); const c=$('#profCur'), t=$('#profTip'); if(c) c.hidden=true; if(t) t.hidden=true; }
-function profBind(){
-  const cv=$('#prof'), r=$('#profRange'); if(!cv||!r) return;
-  const fromEv=e=>{ const b=cv.getBoundingClientRect(); return Math.min(1,Math.max(0,(e.clientX-b.left-3)/(b.width-6))); };
-  let drag=false;
-  cv.addEventListener('pointerdown',e=>{ drag=true; cv.setPointerCapture(e.pointerId); const f=fromEv(e); r.value=Math.round(f*1000); profAt(f); });
-  cv.addEventListener('pointermove',e=>{ if(!drag) return; const f=fromEv(e); r.value=Math.round(f*1000); profAt(f); });
-  cv.addEventListener('pointerup',()=>{ drag=false; });
-  r.addEventListener('input',()=>profAt(r.value/1000));
+function profHide(){ profMk.clearLayers(); profSmall(false); const c=$('#profCur'), t=$('#profTip'); if(c) c.hidden=true; if(t) t.hidden=true; }
+/* Beim Fahren durchs Profil wird das Blatt flach, damit mehr Karte zu sehen ist */
+function profSmall(on){
+  if(!on){ sheet.classList.remove('scrub'); return; }
+  if(window.innerWidth>=900||sheet.classList.contains('scrub')) return;
+  sheet.classList.add('scrub');
+  const pn=$('.panes'), bx=$('#profBox'); if(pn&&bx) pn.scrollTop+=bx.getBoundingClientRect().top-pn.getBoundingClientRect().top-6;
+  setTimeout(()=>{ map.invalidateSize(); const P=$('#prof')?._P; if(P&&P.a.bb) map.fitBounds([[P.a.bb[0],P.a.bb[1]],[P.a.bb[2],P.a.bb[3]]],{paddingTopLeft:[24,70],paddingBottomRight:[24,sheet.offsetHeight+20],maxZoom:16,animate:false}); profKeep(); },280);
 }
-
+function profKeep(){
+  const l=profMk.getLayers()[0]; if(!l||window.innerWidth>=900) return;
+  const pb=sheet.classList.contains('open')?sheet.offsetHeight+16:24;
+  map.panInside(l.getLatLng(),{paddingTopLeft:[24,70],paddingBottomRight:[24,pb],animate:false});
+}
+function profBind(){
+  const cv=$('#prof'); if(!cv) return;
+  const frac=x=>{ const b=cv.getBoundingClientRect(); return Math.min(1,Math.max(0,(x-b.left-3)/(b.width-6))); };
+  const pts=new Map(); let pinch=null, lastTap=0;
+  const scrub=x=>{ profAt(frac(x)); profKeep(); };
+  const setWin=(a0,span)=>{ const P=cv._P, minS=Math.min(P.D,150); span=Math.min(P.D,Math.max(minS,span)); a0=Math.min(P.D-span,Math.max(0,a0)); P.v0=a0; P.v1=a0+span; profRender(cv); };
+  const pinchStart=()=>{ const [p,q]=[...pts.values()], P=cv._P; const cx=(p.x+q.x)/2;
+    pinch={d:Math.max(20,Math.abs(p.x-q.x)), span:P.v1-P.v0, at:P.v0+frac(cx)*(P.v1-P.v0)}; profMk.clearLayers(); $('#profCur').hidden=true; $('#profTip').hidden=true; };
+  cv.addEventListener('pointerdown',e=>{ try{ cv.setPointerCapture(e.pointerId); }catch(_){} pts.set(e.pointerId,{x:e.clientX}); profSmall(true);
+    if(pts.size===2){ pinchStart(); return; }
+    const now=Date.now(); if(now-lastTap<300&&cv._P){ setWin(0,cv._P.D); } lastTap=now; scrub(e.clientX); });
+  cv.addEventListener('pointermove',e=>{ if(!pts.has(e.pointerId)) return; pts.get(e.pointerId).x=e.clientX;
+    if(pinch&&pts.size>=2){ const [p,q]=[...pts.values()], span=pinch.span*pinch.d/Math.max(20,Math.abs(p.x-q.x)), cx=(p.x+q.x)/2;
+      const P=cv._P, minS=Math.min(P.D,150), sp=Math.min(P.D,Math.max(minS,span)); setWin(pinch.at-frac(cx)*sp,sp); return; }
+    if(!pinch) scrub(e.clientX); });
+  const up=e=>{ pts.delete(e.pointerId); if(pts.size<2&&pinch){ pinch=null; const r=[...pts.values()][0]; if(r) scrub(r.x); } };
+  cv.addEventListener('pointerup',up); cv.addEventListener('pointercancel',up);
+  const zb=$('#profZoom'); if(zb) zb.onclick=()=>{ const P=cv._P; if(P){ P.v0=0; P.v1=P.D; profRender(cv); } };
+}
 /* ---------- Auswahl auf der Karte ---------- */
 function showSel(a){
   selLayer.clearLayers();
