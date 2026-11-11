@@ -1,0 +1,55 @@
+name: Linux-Version bauen
+
+# Baut Trail Log für Linux (AppImage und Fedora-Paket) aus derselben index.html
+# und legt sie im Release "linux-latest" ab.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - index.html
+      - desktop/**
+      - icon/app-symbol.png
+      - .github/workflows/linux.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: linux
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Werkzeug für das Fedora-Paket (.rpm)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq rpm >/dev/null
+
+      - name: App bauen (AppImage + RPM)
+        working-directory: desktop
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          mkdir -p app && sed "s/__BUILD__/Linux 1.0.${RUN_NUMBER}/" ../index.html > app/index.html
+          cp ../icon/app-symbol.png build/icon.png
+          npm version "1.0.${RUN_NUMBER}" --no-git-tag-version --allow-same-version
+          npm install --no-audit --no-fund
+          npx electron-builder --linux AppImage rpm --publish never
+          ls -la dist
+
+      - name: Als Download bereitstellen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete linux-latest --yes --cleanup-tag || true
+          gh release create linux-latest desktop/dist/*.AppImage desktop/dist/*.rpm \
+            --title "Trail Log (Linux)" \
+            --notes "Neueste Linux-Version. AppImage: herunterladen, ausführbar machen, starten. Fedora: .rpm installieren (sudo dnf install ./Trail-Log-*.rpm)."

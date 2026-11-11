@@ -1,0 +1,53 @@
+{
+  "name": "trail-log",
+  "productName": "Trail Log",
+  "version": "1.0.0",
+  "description": "Touren, Höhenprofil, Statistik und Offline-MTB-Karte",
+  "author": {
+    "name": "Bernhard",
+    "email": "trail-log@users.noreply.github.com"
+  },
+  "homepage": "https://github.com/BarneyGamble332/Trail-log",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "main.mjs",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --linux AppImage rpm --publish never"
+  },
+  "devDependencies": {
+    "electron": "^45.2.3",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "de.bernhard.traillog",
+    "productName": "Trail Log",
+    "artifactName": "Trail-Log-${version}.${ext}",
+    "files": [
+      "main.mjs",
+      "preload.cjs",
+      "app/**",
+      "build/icon.png"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "rpm"
+      ],
+      "category": "Utility;Maps;Sports",
+      "icon": "build/icon.png",
+      "executableName": "trail-log",
+      "synopsis": "Touren, Höhenprofil, Statistik und Offline-MTB-Karte",
+      "desktop": {
+        "entry": {
+          "Name": "Trail Log",
+          "Comment": "Touren und Offline-MTB-Karte",
+          "StartupWMClass": "Trail Log"
+        }
+      }
+    }
+  }
+}

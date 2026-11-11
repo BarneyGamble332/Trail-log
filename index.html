@@ -2141,6 +2141,7 @@ if(!recHttps()) setTimeout(()=>recWarn(),0);
 function recUI(){ $('#recIdle').hidden=REC.on; $('#recLive').hidden=!REC.on; }
 function recWarn(kind){
   const w=$('#recWarn'); w.hidden=false;
+  if(window.desktop){ w.innerHTML='<b>Aufnehmen geht nur in der Handy-App.</b><br>Touren vom Handy holst du dir mit dem Backup (Einstellungen › Backup exportieren, hier „Backup laden“).'; return; }
   w.innerHTML=kind==='denied'
     ? '<b>Standort ist für diese Seite blockiert.</b><br>In Chrome: Schloss-/Einstellungs-Symbol neben der Adresse → Berechtigungen → Standort → Zulassen. Danach die Seite neu laden. Wenn es kein Symbol gibt: Chrome → Einstellungen → Websiteeinstellungen → Standort.'
     : '<b>Hier ist kein Standortzugriff möglich.</b><br>Der Browser erlaubt GPS nur auf Seiten mit https:// (oder localhost). Eine direkt aus „Downloads" geöffnete Datei (file:// oder content://) fragt deshalb nie nach. Die App muss über eine https-Adresse geöffnet werden, zum Beispiel über GitHub Pages.';
@@ -2459,6 +2460,8 @@ async function saveBlob(blob,name,opt){
     try{ await SH.share({title:name,url:f.uri,dialogTitle:'Datei speichern oder teilen'}); }catch(e){ if(!/cancel/i.test(String(e&&e.message||e))) throw e; }
     return;
   }
+  if(window.desktop&&desktop.saveFile){ // Linux-Version: direkt in Downloads › Trail Log bzw. Bilder › Trail Log
+    const g=!!(opt&&opt.gallery); await desktop.saveFile(name,await blob.arrayBuffer(),g?'gallery':'downloads'); return g?'gallery':'downloads'; }
   const url=URL.createObjectURL(blob), a=document.createElement('a'); a.href=url; a.download=name;
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),10000);
 }
