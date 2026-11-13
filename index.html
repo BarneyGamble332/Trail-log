@@ -919,11 +919,9 @@ function applyLook(){
 /* Heatmap-Farben: Verläufe von wenig (links) nach viel befahren (rechts) */
 const SCHEMES={
   glut:  {name:'Glut',  stops:[[0,'rgba(106,23,110,0)'],[0.02,'rgba(106,23,110,0.55)'],[0.1,'rgba(147,38,103,0.85)'],[0.25,'#bc3754'],[0.42,'#dd513a'],[0.58,'#f37819'],[0.72,'#fca50a'],[0.86,'#f6d746'],[1,'#fcffa4']]}, // Inferno-Verlauf: Violett, Rot, Orange, Hellgelb
-  eis:   {name:'Eis',   stops:[[0,'rgba(20,40,120,0)'],[0.02,'rgba(30,60,160,0.6)'],[0.12,'rgba(30,90,210,0.92)'],[0.35,'#1f8ef0'],[0.62,'#2fd0f5'],[0.86,'#a8f3ff'],[1,'#ffffff']]},
-  wald:  {name:'Wald',  stops:[[0,'rgba(10,70,40,0)'],[0.02,'rgba(15,90,50,0.6)'],[0.12,'rgba(20,120,60,0.92)'],[0.35,'#22a24a'],[0.62,'#7fd43a'],[0.86,'#e4f56a'],[1,'#fbffe6']]},
-  enzian:{name:'Enzian',stops:[[0,'rgba(50,10,90,0)'],[0.02,'rgba(70,20,120,0.6)'],[0.12,'rgba(95,30,170,0.92)'],[0.35,'#8a3ee0'],[0.62,'#d05ae8'],[0.86,'#ffb3f0'],[1,'#fff0fb']]},
-  strava:{name:'Orange',stops:[[0,'rgba(200,60,0,0)'],[0.02,'rgba(220,70,0,0.65)'],[0.15,'rgba(252,76,2,0.95)'],[0.5,'#ff7a1a'],[0.85,'#ffc04d'],[1,'#fff3d6']]}
+  eis:   {name:'Eis',   stops:[[0,'rgba(20,40,120,0)'],[0.02,'rgba(30,60,160,0.6)'],[0.12,'rgba(30,90,210,0.92)'],[0.35,'#1f8ef0'],[0.62,'#2fd0f5'],[0.86,'#a8f3ff'],[1,'#ffffff']]}
 };
+if(S.scheme!=='custom'&&!SCHEMES[S.scheme]){ S.scheme='glut'; ls.set('scheme','glut'); }
 function hexRgb(h){ const n=parseInt(h.slice(1),16); return [(n>>16)&255,(n>>8)&255,n&255]; }
 function customStops(hex){ const [r,g,b]=hexRgb(hex), mix=f=>`rgb(${Math.round(r+(255-r)*f)},${Math.round(g+(255-g)*f)},${Math.round(b+(255-b)*f)})`;
   return [[0,`rgba(${r},${g},${b},0)`],[0.02,`rgba(${r},${g},${b},0.55)`],[0.15,`rgba(${r},${g},${b},0.95)`],[0.6,mix(0.25)],[1,mix(0.7)]]; }
@@ -1177,9 +1175,9 @@ const stt={y:'all',m:'all',k:'d'};
 const MONTHS=['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
 const moving=a=>a.mv>0?a.mv:a.dur;
 /* Härte einer Tour ohne Puls: Strecke, Höhenmeter und Zeit zusammen.
-   1 km = 1 Punkt (zu Fuß 3, weil ein km Gehen etwa so viel Arbeit ist wie 3 km Rad), 10 Hm = 1 Punkt, 1 h = 10 Punkte */
+   1 km = 1 Punkt (zu Fuß 3, weil ein km Gehen etwa so viel Arbeit ist wie 3 km Rad), 10 Hm = 1 Punkt, 1 h = 5 Punkte */
 const FOOT_T=new Set(['hike','walk','run','trailrun','snowshoe','backcountryski']);
-const hardOf=a=>(a.dist/1000)*(FOOT_T.has(typeKey(a.t))?3:1)+(a.gain||0)/10+(moving(a)||0)/360;
+const hardOf=a=>(a.dist/1000)*(FOOT_T.has(typeKey(a.t))?3:1)+(a.gain||0)/10+(moving(a)||0)/720;
 /* Diagramm für die Statistik: Balken oder Punkte mit Linie, mehrere Reihen in einem Bild.
    Jede Reihe hat ihre eigene Skala (km, Hm und h passen nicht auf eine Achse): S=[{n,c,v,h,fv,gap}] */
 stt.mode=ls.get('chartMode','bar');
@@ -1278,7 +1276,7 @@ function hardHtml(f){
       <span class="hn">${esc(a0.n||typeLabel(a0.t))}</span><span class="hs">${fmt0.format(h0)}<small>Punkte</small></span>
       <span class="hm">${meta(a0)}</span></summary>
     <ol>${top.map(([a,h])=>`<li data-tour="${esc(a.id)}"><b>${esc(a.n||typeLabel(a.t))}</b><em>${fmt0.format(h)}</em><span>${meta(a)}</span></li>`).join('')}</ol>
-    <p class="note" style="padding:0 14px 12px;margin:0">Punkte aus Strecke, Höhenmetern und Zeit: 1 km = 1 Punkt (zu Fuß 3), 10 Hm = 1 Punkt, 1 Stunde = 10 Punkte. Antippen öffnet die Tour.</p></details>`;
+    <p class="note" style="padding:0 14px 12px;margin:0">Punkte aus Strecke, Höhenmetern und Zeit: 1 km = 1 Punkt (zu Fuß 3), 10 Hm = 1 Punkt, 1 Stunde = 5 Punkte. Antippen öffnet die Tour.</p></details>`;
 }
 /* ---------- Puls-Auswertungen: Kalorien, Puls nach Steigung, Erholung, Anstiege ---------- */
 const BODY=()=>({w:+ls.get('bodyW',0),y:+ls.get('bodyY',0),s:ls.get('bodyS','m')});
