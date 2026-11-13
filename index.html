@@ -82,6 +82,11 @@ button:focus-visible,input:focus-visible,label:focus-within{outline:2px solid va
 #sheet.open .panes{max-height:58vh}
 .pane{padding-block:14px 22px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:20px}
 
+@media (max-width:899px){
+  body.stats-wide #sheet.open{top:0;border-radius:0;padding-top:env(safe-area-inset-top,0px)}
+  body.stats-wide #sheet.open .panes{max-height:none;flex:1}
+  body.stats-wide #sheet.open .handle::after{background:var(--muted)}
+}
 @media (min-width:900px){
   #mapBox{right:var(--side);bottom:0}
   #sheet{top:0;left:auto;width:var(--side);border-radius:0;border-top:0;border-left:1px solid var(--line);box-shadow:none;padding-top:env(safe-area-inset-top,0px)}
@@ -314,6 +319,13 @@ canvas.prof{width:100%;height:120px;display:block;touch-action:none;cursor:cross
 .chart i.z{height:2px!important;background:var(--line);animation:none}
 .chart em{font:500 10px var(--f-num);font-style:normal;margin-bottom:3px;color:var(--muted);white-space:nowrap}
 .xl{display:flex;gap:5px;margin-top:5px}
+.chart{position:relative}
+.ch-wrap.ax1{padding-left:38px}.ch-wrap .chart{margin-top:24px}.ch-wrap.ax2{padding-right:38px}
+.yax{position:absolute;top:0;bottom:0;width:34px;pointer-events:none;font:500 10px/1 var(--f-num);color:var(--c,var(--muted))}
+.yax.l{left:-38px;text-align:right}.yax.r{right:-38px;text-align:left}
+.yax span{position:absolute;left:0;right:0;transform:translateY(50%);white-space:nowrap}
+.yax u{position:absolute;top:-14px;left:0;right:0;text-decoration:none;font-weight:700;opacity:.85}
+.chart .gl{position:absolute;left:0;right:0;height:0;border-top:1px dashed var(--line);pointer-events:none}
 .chart .cb{display:flex;flex-direction:row;align-items:flex-end;justify-content:center;gap:2px;width:100%;flex:1;min-height:0}
 .chart .cb i{flex:1;min-width:0;max-width:38px;background:linear-gradient(180deg,var(--c),color-mix(in srgb,var(--c) 45%,transparent))}
 .chart.multi .cb i{border-radius:3px 3px 1px 1px}
@@ -1198,15 +1210,15 @@ const chModeHtml=()=>`<div class="ch-mode" role="group" aria-label="Darstellung"
 const CHD=[]; // Daten der gezeichneten Diagramme fürs Antippen
 function chartHtml(keys,label,few,S,cls=''){
   const id=CHD.length; CHD.push({keys,label,S});
-  return `<div class="ch-wrap" data-ch="${id}">${chartInner(keys,label,few,S,cls)}</div>`;
+  return `<div class="ch-wrap ax1${S.length>1?' ax2':''}" data-ch="${id}">${chartInner(keys,label,few,S,cls)}</div>`;
 }
 function chartTip(w,x){
   const d=CHD[+w.dataset.ch]; if(!d) return; const ch=w.querySelector('.chart'), r=ch.getBoundingClientRect(), n=d.keys.length;
   const i=Math.max(0,Math.min(n-1,Math.floor((x-r.left)/r.width*n))); w.querySelectorAll('.ch-tip,.ch-sel').forEach(e=>e.remove());
-  const cx=(i+.5)/n*r.width, t=document.createElement('div'); t.className='ch-tip';
+  const off=r.left-w.getBoundingClientRect().left, cx=off+(i+.5)/n*r.width, t=document.createElement('div'); t.className='ch-tip';
   t.innerHTML=`<b>${esc(String(d.label(d.keys[i])||d.keys[i]))}</b>`+d.S.map(s=>`<span>${d.S.length>1?`<i style="background:${s.c}"></i>`:''}${s.v[i]?(s.ft?s.ft(s.v[i]):s.fv(s.v[i])+(s.u||'')):'–'}</span>`).join('<br>');
   const l=document.createElement('div'); l.className='ch-sel'; l.style.left=cx+'px'; w.append(l,t);
-  t.style.left=Math.max(t.offsetWidth/2,Math.min(r.width-t.offsetWidth/2,cx))+'px';
+  t.style.left=Math.max(t.offsetWidth/2,Math.min(w.clientWidth-t.offsetWidth/2,cx))+'px';
   clearTimeout(chartTip.tm); chartTip.tm=setTimeout(()=>{ t.remove(); l.remove(); },3500);
 }
 document.addEventListener('pointerdown',e=>{ const w=e.target.closest&&e.target.closest('.ch-wrap'); if(w) chartTip(w,e.clientX); });
@@ -1221,8 +1233,23 @@ function smoothPath(P){
     d+=`C${(P[i][0]+h).toFixed(2)},${(P[i][1]+t[i]*h).toFixed(2)} ${(P[i+1][0]-h).toFixed(2)},${(P[i+1][1]-t[i+1]*h).toFixed(2)} ${P[i+1][0].toFixed(2)},${P[i+1][1].toFixed(2)}`; }
   return d;
 }
+/* runde Achsen-Schritte (1, 2, 2,5, 5 × 10^n) */
+function niceTicks(lo,hi,cnt=4){
+  if(!(hi>lo)) return [lo]; const raw=(hi-lo)/cnt, p=Math.pow(10,Math.floor(Math.log10(raw)));
+  const step=[1,2,2.5,5,10].map(m=>m*p).find(x=>x>=raw); const out=[];
+  for(let t=Math.ceil(lo/step-1e-9)*step;t<=hi+1e-9;t+=step) out.push(+t.toFixed(6)); return out;
+}
+const fmtAx=t=>t>=10000?fmt0.format(t/1000)+'k':Math.abs(t)<10&&t%1?fmt1.format(t):fmt0.format(t);
+function yAxis(s,side,hp,grid){
+  if(!s.inv) return ''; const uf=s.uf||1, top=s.inv(100/hp)*uf, bot=Math.max(0,s.inv(0)*uf);
+  const ts=niceTicks(bot,top).filter(t=>t>0||s.sum!==false&&!s.gap);
+  const pos=t=>s.h(t/uf)*hp, ok=t=>{ const y=pos(t); return y>=0&&y<=100; };
+  return `<div class="yax ${side}" style="--c:${s.c}"><u>${s.un||''}</u>${ts.filter(ok).map(t=>`<span style="bottom:${pos(t).toFixed(1)}%">${fmtAx(t)}</span>`).join('')}</div>`
+    +(grid?ts.filter(ok).map(t=>`<span class="gl" style="bottom:${pos(t).toFixed(1)}%"></span>`).join(''):'');
+}
 function chartInner(keys,label,few,S,cls){
   const n=keys.length, hp=few?80:92, one=S.length===1;
+  const AX=yAxis(S[0],'l',hp,true)+(S[1]?yAxis(S[1],'r',hp,false):'');
   const tip=i=>esc(String(label(keys[i])||keys[i]))+': '+S.map(s=>s.v[i]?s.fv(s.v[i]):'–').join(' · ');
   const xl=`<div class="xl">${keys.map(k=>`<span>${label(k)}</span>`).join('')}</div>`;
   if(stt.mode==='line'){
@@ -1233,9 +1260,9 @@ function chartInner(keys,label,few,S,cls){
       return segs.map(c=>`<path d="${smoothPath(c.map(q=>q.split(',').map(Number)))}" stroke="${s.c}"/>`).join(''); }).join('');
     const dots=S.map(s=>keys.map((k,i)=>s.gap&&!s.v[i]?'':`<b class="dot" style="--c:${s.c};left:${(i+.5)/n*100}%;bottom:${y(s,i)}%" title="${tip(i)}"></b>`
       +(one&&few&&s.v[i]?`<em class="lv" style="left:${(i+.5)/n*100}%;bottom:${y(s,i)}%">${s.fv(s.v[i])}</em>`:'')).join('')).join('');
-    return `<div class="chart line ${cls}"><svg viewBox="0 0 100 100" preserveAspectRatio="none">${lines}</svg>${dots}</div>${xl}`;
+    return `<div class="chart line ${cls}">${AX}<svg viewBox="0 0 100 100" preserveAspectRatio="none">${lines}</svg>${dots}</div>${xl}`;
   }
-  return `<div class="chart ${cls}${one?'':' multi'}">${keys.map((k,i)=>`<div class="c" title="${tip(i)}">${one&&few&&S[0].v[i]?`<em>${S[0].fv(S[0].v[i])}</em>`:''}${one?`<i class="${S[0].v[i]?'':'z'}" style="background:linear-gradient(180deg,${S[0].c},color-mix(in srgb,${S[0].c} 45%,transparent));height:${(S[0].h(S[0].v[i])*hp).toFixed(1)}%"></i>`:`<div class="cb">${S.map(s=>`<i class="${s.v[i]?'':'z'}" style="--c:${s.c};height:${(s.h(s.v[i])*hp).toFixed(1)}%"></i>`).join('')}</div>`}</div>`).join('')}</div>${xl}`;
+  return `<div class="chart ${cls}${one?'':' multi'}">${AX}${keys.map((k,i)=>`<div class="c" title="${tip(i)}">${one&&few&&S[0].v[i]?`<em>${S[0].fv(S[0].v[i])}</em>`:''}${one?`<i class="${S[0].v[i]?'':'z'}" style="background:linear-gradient(180deg,${S[0].c},color-mix(in srgb,${S[0].c} 45%,transparent));height:${(S[0].h(S[0].v[i])*hp).toFixed(1)}%"></i>`:`<div class="cb">${S.map(s=>`<i class="${s.v[i]?'':'z'}" style="--c:${s.c};height:${(s.h(s.v[i])*hp).toFixed(1)}%"></i>`).join('')}</div>`}</div>`).join('')}</div>${xl}`;
 }
 const toggleIn=(arr,k)=>arr.includes(k)?(arr.length>1?arr.filter(x=>x!==k):arr):[...arr,k];
 function renderStats(){
@@ -1257,7 +1284,7 @@ function renderStats(){
   const FV={d:x=>fmt1.format(x/1000)+(few?'':' km'),up:x=>(x>=1000?fmt1.format(x/1000)+'k':fmt0.format(x))+(few?'':' Hm'),mv:x=>fmt1.format(x/3600)+(few?'':' h')};
   const KC={d:'#e0b400',up:'#d9653b',mv:'#3b82c4'}, NM={d:'Kilometer',up:'Höhenmeter',mv:'Stunden'};
   const SER=KS.map(K=>{ const B=new Map(keys.map(k=>[k,0])); f.forEach(a=>B.set(key(a),(B.get(key(a))||0)+VAL[K](a)));
-    const v=keys.map(k=>B.get(k)||0), mx=Math.max(0,...v); return {n:NM[K],c:KC[K],v,h:x=>x/(mx||1),fv:FV[K],ft:{d:x=>fmt1.format(x/1000)+' km',up:x=>fmt0.format(x)+' Hm',mv:x=>fmt1.format(x/3600)+' h'}[K]}; });
+    const v=keys.map(k=>B.get(k)||0), mx=Math.max(0,...v); return {n:NM[K],c:KC[K],v,h:x=>x/(mx||1),inv:f=>f*(mx||1),uf:{d:1/1000,up:1,mv:1/3600}[K],un:{d:'km',up:'Hm',mv:'h'}[K],fv:FV[K],ft:{d:x=>fmt1.format(x/1000)+' km',up:x=>fmt0.format(x)+' Hm',mv:x=>fmt1.format(x/3600)+' h'}[K]}; });
   const nm=KS.length===1?NM[KS[0]]:'Verlauf';
   const opt=(v,t,c)=>`<option value="${v}"${String(c)===String(v)?' selected':''}>${t}</option>`;
   const sg=(k,t)=>`<button data-k="${k}"${KS.includes(k)?' class="on"':''}>${KS.length>1&&KS.includes(k)?`<i style="background:${KC[k]}"></i>`:''}${t}</button>`;
@@ -1472,7 +1499,8 @@ function hrStatsHtml(f,keys,key,label,per,few){
   const PU={load:'',avg:' bpm',eff:' S/km',kcal:' kcal',rec:' bpm'};
   const SER=PS.map(P=>{ const val=g=>P==='load'?g.l:P==='avg'?(g.t?g.w/g.t:0):P==='kcal'?g.kc:P==='rec'?(g.rn?g.rs/g.rn:0):(g.km?g.b/g.km:0);
     const vals=keys.map(k=>val(G.get(k))), vmax=Math.max(0,...vals), sum=P==='load'||P==='kcal', vmin=sum?0:Math.min(...vals.filter(v=>v>0));
-    return {c:PC[P],v:vals,gap:!sum,u:few?PU[P]:'',fv:v=>fmt0.format(v)+(few?'':PU[P]),h:v=>!v?0:sum?v/(vmax||1):0.15+0.85*(v-vmin)/((vmax-vmin)||1)}; });
+    const rg=(vmax-vmin)||1;
+    return {c:PC[P],v:vals,gap:!sum,sum,un:{load:'',avg:'bpm',eff:'S/km',kcal:'kcal',rec:'bpm'}[P],inv:f=>sum?f*(vmax||1):vmin+(f-0.15)/0.85*rg,u:few?PU[P]:'',fv:v=>fmt0.format(v)+(few?'':PU[P]),h:v=>!v?0:sum?v/(vmax||1):0.15+0.85*(v-vmin)/((vmax-vmin)||1)}; });
   const sg=(k,t)=>`<button data-p="${k}"${PS.includes(k)?' class="on"':''}>${PS.length>1&&PS.includes(k)?`<i style="background:${PC[k]}"></i>`:''}${t}</button>`;
   const zp=Z.map(v=>zt?v/zt*100:0);
   const top=[...hf].map(a=>[a,tourLoad(a)]).filter(x=>x[1]>0).sort((x,y)=>y[1]-x[1]).slice(0,3);
