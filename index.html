@@ -287,6 +287,24 @@ canvas.prof{width:100%;height:120px;display:block;touch-action:none;cursor:cross
 .chart i.z{height:2px!important;background:var(--line);animation:none}
 .chart em{font:500 10px var(--f-num);font-style:normal;margin-bottom:3px;color:var(--muted);white-space:nowrap}
 .xl{display:flex;gap:5px;margin-top:5px}
+.chart .cb{display:flex;flex-direction:row;align-items:flex-end;justify-content:center;gap:2px;width:100%;flex:1;min-height:0}
+.chart .cb i{flex:1;min-width:0;max-width:38px;background:linear-gradient(180deg,var(--c),color-mix(in srgb,var(--c) 45%,transparent))}
+.chart.multi .cb i{border-radius:3px 3px 1px 1px}
+.chart.line{position:relative;display:block}
+.chart.line svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.chart.line polyline{fill:none;stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round;vector-effect:non-scaling-stroke}
+.chart.line .dot{position:absolute;width:9px;height:9px;margin:0 0 -4.5px -4.5px;border-radius:50%;background:var(--c);border:2px solid var(--bg);box-sizing:border-box}
+.chart.line em.lv{position:absolute;transform:translate(-50%,-14px)}
+.ch-h{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.ch-mode{display:flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;flex:none}
+.ch-mode button{border:0;background:var(--chip);padding:5px 9px;cursor:pointer;color:var(--muted);display:grid;place-items:center}
+.ch-mode button+button{border-left:1px solid var(--line)}
+.ch-mode button.on{background:var(--sign);color:var(--sign-ink)}
+.ch-tip{position:absolute;z-index:3;top:0;transform:translateX(-50%);background:var(--ink);color:var(--bg);border-radius:8px;padding:6px 9px;font:500 12px/1.45 var(--f-body);white-space:nowrap;pointer-events:none;box-shadow:0 4px 14px rgba(0,0,0,.2)}
+.ch-tip b{display:block;font-weight:700}.ch-tip i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px}
+.ch-wrap{position:relative}.ch-wrap .ch-sel{position:absolute;top:0;bottom:0;width:1px;background:var(--muted);opacity:.5;pointer-events:none}
+.seg.multi button{display:flex;align-items:center;justify-content:center;gap:6px}
+.seg.multi button i{width:9px;height:9px;border-radius:50%;flex:none}
 .xl span{flex:1;min-width:0;text-align:center;font:500 10px var(--f-num);color:var(--muted);overflow:visible;white-space:nowrap;letter-spacing:-.5px}
 @keyframes grow{from{transform:scaleY(0)}}
 .seg.mt{margin-top:2px}
@@ -1142,8 +1160,46 @@ function renderSummary(){
 const stt={y:'all',m:'all',k:'d'};
 const MONTHS=['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
 const moving=a=>a.mv>0?a.mv:a.dur;
+/* Diagramm für die Statistik: Balken oder Punkte mit Linie, mehrere Reihen in einem Bild.
+   Jede Reihe hat ihre eigene Skala (km, Hm und h passen nicht auf eine Achse): S=[{n,c,v,h,fv,gap}] */
+stt.mode=ls.get('chartMode','bar');
+const CH_ICON={bar:'<svg width="18" height="14" viewBox="0 0 18 14"><rect x="1" y="6" width="4" height="8" rx="1" fill="currentColor"/><rect x="7" y="2" width="4" height="12" rx="1" fill="currentColor"/><rect x="13" y="8" width="4" height="6" rx="1" fill="currentColor"/></svg>',
+  line:'<svg width="18" height="14" viewBox="0 0 18 14"><polyline points="2,10 7,4 12,8 16,2" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="2" cy="10" r="1.8" fill="currentColor"/><circle cx="7" cy="4" r="1.8" fill="currentColor"/><circle cx="12" cy="8" r="1.8" fill="currentColor"/><circle cx="16" cy="2" r="1.8" fill="currentColor"/></svg>'};
+const chModeHtml=()=>`<div class="ch-mode" role="group" aria-label="Darstellung">${['bar','line'].map(m=>`<button data-mode="${m}"${stt.mode===m?' class="on"':''} aria-label="${m==='bar'?'Balken':'Linie'}">${CH_ICON[m]}</button>`).join('')}</div>`;
+const CHD=[]; // Daten der gezeichneten Diagramme fürs Antippen
+function chartHtml(keys,label,few,S,cls=''){
+  const id=CHD.length; CHD.push({keys,label,S});
+  return `<div class="ch-wrap" data-ch="${id}">${chartInner(keys,label,few,S,cls)}</div>`;
+}
+function chartTip(w,x){
+  const d=CHD[+w.dataset.ch]; if(!d) return; const ch=w.querySelector('.chart'), r=ch.getBoundingClientRect(), n=d.keys.length;
+  const i=Math.max(0,Math.min(n-1,Math.floor((x-r.left)/r.width*n))); w.querySelectorAll('.ch-tip,.ch-sel').forEach(e=>e.remove());
+  const cx=(i+.5)/n*r.width, t=document.createElement('div'); t.className='ch-tip';
+  t.innerHTML=`<b>${esc(String(d.label(d.keys[i])||d.keys[i]))}</b>`+d.S.map(s=>`<span>${d.S.length>1?`<i style="background:${s.c}"></i>`:''}${s.v[i]?(s.ft?s.ft(s.v[i]):s.fv(s.v[i])+(s.u||'')):'–'}</span>`).join('<br>');
+  const l=document.createElement('div'); l.className='ch-sel'; l.style.left=cx+'px'; w.append(l,t);
+  t.style.left=Math.max(t.offsetWidth/2,Math.min(r.width-t.offsetWidth/2,cx))+'px';
+  clearTimeout(chartTip.tm); chartTip.tm=setTimeout(()=>{ t.remove(); l.remove(); },3500);
+}
+document.addEventListener('pointerdown',e=>{ const w=e.target.closest&&e.target.closest('.ch-wrap'); if(w) chartTip(w,e.clientX); });
+function chartInner(keys,label,few,S,cls){
+  const n=keys.length, hp=few?80:92, one=S.length===1;
+  const tip=i=>esc(String(label(keys[i])||keys[i]))+': '+S.map(s=>s.v[i]?s.fv(s.v[i]):'–').join(' · ');
+  const xl=`<div class="xl">${keys.map(k=>`<span>${label(k)}</span>`).join('')}</div>`;
+  if(stt.mode==='line'){
+    const y=(s,i)=>s.h(s.v[i])*hp;
+    const lines=S.map(s=>{ const segs=[]; let cur=[];
+      for(let i=0;i<n;i++){ if(s.gap&&!s.v[i]){ if(cur.length) segs.push(cur); cur=[]; continue; } cur.push(`${(i+.5)/n*100},${100-y(s,i)}`); }
+      if(cur.length) segs.push(cur);
+      return segs.map(c=>`<polyline points="${c.join(' ')}" stroke="${s.c}"/>`).join(''); }).join('');
+    const dots=S.map(s=>keys.map((k,i)=>s.gap&&!s.v[i]?'':`<b class="dot" style="--c:${s.c};left:${(i+.5)/n*100}%;bottom:${y(s,i)}%" title="${tip(i)}"></b>`
+      +(one&&few&&s.v[i]?`<em class="lv" style="left:${(i+.5)/n*100}%;bottom:${y(s,i)}%">${s.fv(s.v[i])}</em>`:'')).join('')).join('');
+    return `<div class="chart line ${cls}"><svg viewBox="0 0 100 100" preserveAspectRatio="none">${lines}</svg>${dots}</div>${xl}`;
+  }
+  return `<div class="chart ${cls}${one?'':' multi'}">${keys.map((k,i)=>`<div class="c" title="${tip(i)}">${one&&few&&S[0].v[i]?`<em>${S[0].fv(S[0].v[i])}</em>`:''}${one?`<i class="${S[0].v[i]?'':'z'}" style="background:linear-gradient(180deg,${S[0].c},color-mix(in srgb,${S[0].c} 45%,transparent));height:${(S[0].h(S[0].v[i])*hp).toFixed(1)}%"></i>`:`<div class="cb">${S.map(s=>`<i class="${s.v[i]?'':'z'}" style="--c:${s.c};height:${(s.h(s.v[i])*hp).toFixed(1)}%"></i>`).join('')}</div>`}</div>`).join('')}</div>${xl}`;
+}
+const toggleIn=(arr,k)=>arr.includes(k)?(arr.length>1?arr.filter(x=>x!==k):arr):[...arr,k];
 function renderStats(){
-  const el=$('#stats');
+  const el=$('#stats'); CHD.length=0;
   if(!S.acts.length){ el.innerHTML='<p class="empty">Noch keine Touren. Im Tab „Daten“ den Strava-Export laden.</p>'; return; }
   const yrs=[...new Set(visible.map(yearOf))].sort((a,b)=>b-a);
   if(stt.y!=='all'&&!yrs.includes(+stt.y)){ stt.y='all'; stt.m='all'; }
@@ -1151,17 +1207,20 @@ function renderStats(){
   let dist=0,gain=0,mv=0; const byType=new Map();
   for(const a of f){ dist+=a.dist; gain+=a.gain; mv+=moving(a);
     const t=byType.get(a.t)||{n:0,d:0,g:0}; t.n++; t.d+=a.dist; t.g+=a.gain; byType.set(a.t,t); }
-  const K=stt.k, val={d:a=>a.dist,up:a=>a.gain,mv:a=>moving(a)}[K];
+  if(!Array.isArray(stt.ks)) stt.ks=ls.get('chartK',['d']);
+  const KS=stt.ks, VAL={d:a=>a.dist,up:a=>a.gain,mv:a=>moving(a)};
   let keys,key,label,per;
   if(stt.y==='all'){ const ys=f.map(yearOf); keys=[]; if(ys.length){ for(let y=Math.min(...ys);y<=Math.max(...ys);y++) keys.push(y); } key=a=>yearOf(a); label=k=>k; per='Jahr'; }
   else if(stt.m==='all'){ keys=[...Array(12).keys()]; key=a=>new Date(a.d).getMonth(); label=k=>MONTHS[k].slice(0,3); per='Monat'; }
   else { const n=new Date(+stt.y,+stt.m+1,0).getDate(); keys=Array.from({length:n},(_,i)=>i+1); key=a=>new Date(a.d).getDate(); label=k=>(k===1||k%5===0)?k:''; per='Tag'; }
-  const B=new Map(keys.map(k=>[k,0])); f.forEach(a=>B.set(key(a),(B.get(key(a))||0)+val(a)));
-  const mx=Math.max(0,...B.values()), few=keys.length<=12;
-  const fv={d:x=>fmt1.format(x/1000),up:x=>x>=1000?fmt1.format(x/1000)+'k':fmt0.format(x),mv:x=>fmt1.format(x/3600)}[K];
-  const nm={d:'Kilometer',up:'Höhenmeter',mv:'Stunden'}[K];
+  const few=keys.length<=12;
+  const FV={d:x=>fmt1.format(x/1000)+(few?'':' km'),up:x=>(x>=1000?fmt1.format(x/1000)+'k':fmt0.format(x))+(few?'':' Hm'),mv:x=>fmt1.format(x/3600)+(few?'':' h')};
+  const KC={d:'#e0b400',up:'#d9653b',mv:'#3b82c4'}, NM={d:'Kilometer',up:'Höhenmeter',mv:'Stunden'};
+  const SER=KS.map(K=>{ const B=new Map(keys.map(k=>[k,0])); f.forEach(a=>B.set(key(a),(B.get(key(a))||0)+VAL[K](a)));
+    const v=keys.map(k=>B.get(k)||0), mx=Math.max(0,...v); return {n:NM[K],c:KC[K],v,h:x=>x/(mx||1),fv:FV[K],ft:{d:x=>fmt1.format(x/1000)+' km',up:x=>fmt0.format(x)+' Hm',mv:x=>fmt1.format(x/3600)+' h'}[K]}; });
+  const nm=KS.length===1?NM[KS[0]]:'Verlauf';
   const opt=(v,t,c)=>`<option value="${v}"${String(c)===String(v)?' selected':''}>${t}</option>`;
-  const sg=(k,t)=>`<button data-k="${k}"${K===k?' class="on"':''}>${t}</button>`;
+  const sg=(k,t)=>`<button data-k="${k}"${KS.includes(k)?' class="on"':''}>${KS.length>1&&KS.includes(k)?`<i style="background:${KC[k]}"></i>`:''}${t}</button>`;
   el.innerHTML=`
     <div class="row2"><select class="sel" id="sY" aria-label="Jahr">${opt('all','Alle Jahre',stt.y)}${yrs.map(y=>opt(y,y,stt.y)).join('')}</select>
       <select class="sel" id="sM" aria-label="Monat"${stt.y==='all'?' disabled':''}>${opt('all','Alle Monate',stt.m)}${MONTHS.map((n,i)=>opt(i,n,stt.m)).join('')}</select></div>
@@ -1171,8 +1230,8 @@ function renderStats(){
       <div class="tile"><div class="v">${fmt0.format(gain)}<small>Hm</small></div><div class="l">Aufstieg</div></div>
       <div class="tile"><div class="v">${fmt0.format(mv/3600)}<small>h</small></div><div class="l">Bewegungszeit</div></div>
     </div>
-    <div><h3>${nm} pro ${per}</h3><div class="seg mt" id="sK">${sg('d','Strecke')}${sg('up','Aufstieg')}${sg('mv','Zeit')}</div>
-      ${f.length?`<div class="chart">${keys.map(k=>{ const v=B.get(k)||0; return `<div class="c" title="${esc(label(k)||k)}: ${fv(v)}">${few&&v?`<em>${fv(v)}</em>`:''}<i class="${v?'':'z'}" style="height:${(v/(mx||1)*(few?80:92)).toFixed(1)}%"></i></div>`; }).join('')}</div><div class="xl">${keys.map(k=>`<span>${label(k)}</span>`).join('')}</div>`:'<p class="empty" style="margin-top:12px">Keine Touren in diesem Zeitraum.</p>'}</div>
+    <div><div class="ch-h"><h3>${nm} pro ${per}</h3>${chModeHtml()}</div><div class="seg mt multi" id="sK">${sg('d','Strecke')}${sg('up','Aufstieg')}${sg('mv','Zeit')}</div>
+      ${f.length?chartHtml(keys,label,few,SER):'<p class="empty" style="margin-top:12px">Keine Touren in diesem Zeitraum.</p>'}</div>
     ${hrStatsHtml(f,keys,key,label,per,few)}
     ${segsHtml()}
     <div><h3>Nach Sportart</h3><table><thead><tr><th>Sportart</th><th>Touren</th><th>km</th><th>Hm</th></tr></thead><tbody>
@@ -1350,7 +1409,7 @@ function hrStatsHtml(f,keys,key,label,per,few){
     const gr=tourHrGrade(a); if(gr) for(const k in GR){ GR[k][0]+=gr[k][0]; GR[k][1]+=gr[k][1]; }
   }
   const gAvg=k=>GR[k][1]>60?fmt0.format(GR[k][0]/GR[k][1]):'–', body=BODY().w>30&&BODY().y>1900;
-  const avg=ts?tw/ts:0, P=stt.p||'load';
+  const avg=ts?tw/ts:0; if(!Array.isArray(stt.ps)) stt.ps=ls.get('chartP',['load']); const PS=stt.ps, P=PS[0];
   // Verlauf je Jahr/Monat/Tag wie im Diagramm oben
   const G=new Map(keys.map(k=>[k,{l:0,w:0,t:0,b:0,km:0,kc:0,rs:0,rn:0}]));
   for(const a of hf){ const g=G.get(key(a)); if(!g) continue; const mv=moving(a)||0;
@@ -1358,18 +1417,20 @@ function hrStatsHtml(f,keys,key,label,per,few){
     const rc=tourRecovery(a); if(rc!=null){ g.rs+=rc; g.rn++; } }
   // Kalorien über alle Touren des Zeitraums: aus Puls oder geschätzt
   let kN=0,kE=0; for(const a of f){ const r=kcalOf(a); if(!r.k) continue; kcal+=r.k; r.est?kE++:kN++; const g=G.get(key(a)); if(g) g.kc+=r.k; }
-  const val=g=>P==='load'?g.l:P==='avg'?(g.t?g.w/g.t:0):P==='kcal'?g.kc:P==='rec'?(g.rn?g.rs/g.rn:0):(g.km?g.b/g.km:0);
-  const vals=keys.map(k=>val(G.get(k))), vmax=Math.max(0,...vals), vmin=P==='load'?0:Math.min(...vals.filter(v=>v>0));
-  const fv=v=>P==='load'?fmt0.format(v):fmt0.format(v);
-  const h=v=>!v?0:P==='load'||P==='kcal'?v/(vmax||1):0.15+0.85*(v-vmin)/((vmax-vmin)||1);
-  const sg=(k,t)=>`<button data-p="${k}"${P===k?' class="on"':''}>${t}</button>`;
+  const PC={load:'#e57373',avg:'#b23a6b',eff:'#8e6cc9',kcal:'#f29d38',rec:'#2a9d8f'};
+  const PU={load:'',avg:' bpm',eff:' S/km',kcal:' kcal',rec:' bpm'};
+  const SER=PS.map(P=>{ const val=g=>P==='load'?g.l:P==='avg'?(g.t?g.w/g.t:0):P==='kcal'?g.kc:P==='rec'?(g.rn?g.rs/g.rn:0):(g.km?g.b/g.km:0);
+    const vals=keys.map(k=>val(G.get(k))), vmax=Math.max(0,...vals), sum=P==='load'||P==='kcal', vmin=sum?0:Math.min(...vals.filter(v=>v>0));
+    return {c:PC[P],v:vals,gap:!sum,u:few?PU[P]:'',fv:v=>fmt0.format(v)+(few?'':PU[P]),h:v=>!v?0:sum?v/(vmax||1):0.15+0.85*(v-vmin)/((vmax-vmin)||1)}; });
+  const sg=(k,t)=>`<button data-p="${k}"${PS.includes(k)?' class="on"':''}>${PS.length>1&&PS.includes(k)?`<i style="background:${PC[k]}"></i>`:''}${t}</button>`;
   const zp=Z.map(v=>zt?v/zt*100:0);
   const top=[...hf].map(a=>[a,tourLoad(a)]).filter(x=>x[1]>0).sort((x,y)=>y[1]-x[1]).slice(0,3);
-  const nm={load:'Belastung',avg:'Ø Puls',eff:'Herzschläge pro km',kcal:'Kalorien',rec:'Erholung (Pulsabfall in 1 min)'}[P];
+  const nm=PS.length>1?'Puls-Verlauf':{load:'Belastung',avg:'Ø Puls',eff:'Herzschläge pro km',kcal:'Kalorien',rec:'Erholung (Pulsabfall in 1 min)'}[P];
   const note={load:'Belastung: Minuten in Zone 1–5, mal 1–5 gewichtet. Je höher, desto anstrengender.',
     avg:'Ø Puls über die Bewegungszeit.',eff:'Herzschläge pro Kilometer. Sinkt der Wert bei ähnlichen Touren, bist du fitter geworden.',
     kcal:body?`Aus Puls berechnet: ${fmt0.format(kN)} Touren, ohne Puls geschätzt: ${fmt0.format(kE)} Touren.`:'Für Kalorien bitte in den Einstellungen Gewicht, Geburtsjahr und Geschlecht eintragen.',
-    rec:'Wie viele Schläge der Puls in der ersten Minute nach einem Anstieg fällt. Mehr ist besser.'}[P];
+    rec:'Wie viele Schläge der Puls in der ersten Minute nach einem Anstieg fällt. Mehr ist besser.'};
+  const noteT=PS.length>1?'Jede Reihe hat ihre eigene Skala. Antippen zeigt die Werte.':note[P];
   return `<div class="hrst">
     <h3>Puls</h3>
     <div class="tiles">
@@ -1398,13 +1459,14 @@ function hrStatsHtml(f,keys,key,label,per,few){
       <div class="tile"><div class="v hrv">${gAvg('fl')}<small>bpm</small></div><div class="l">Flach</div></div>
       <div class="tile"><div class="v hrv">${gAvg('dn')}<small>bpm</small></div><div class="l">Bergab</div></div></div>
     <p class="note">Ø Puls nach Steigung, gemessen jeweils über die letzten 100 m: bergauf über 4 %, bergab unter −4 %, dazwischen flach.</p></div>
-  <div><h3>${nm} pro ${per}</h3><div class="seg mt sp5" id="sP">${sg('load','Belastung')}${sg('avg','Ø Puls')}${sg('eff','Schläge/km')}${sg('kcal','Kalorien')}${sg('rec','Erholung')}</div>
-    <div class="chart hrc">${keys.map((k,i)=>{ const v=vals[i]; return `<div class="c" title="${esc(String(label(k)||k))}: ${v?fv(v):'–'}">${few&&v?`<em>${fv(v)}</em>`:''}<i class="${v?'':'z'}" style="height:${(h(v)*(few?80:92)).toFixed(1)}%"></i></div>`; }).join('')}</div><div class="xl">${keys.map(k=>`<span>${label(k)}</span>`).join('')}</div>
-    <p class="note">${note}</p></div>
+  <div><div class="ch-h"><h3>${nm} pro ${per}</h3>${chModeHtml()}</div><div class="seg mt sp5 multi" id="sP">${sg('load','Belastung')}${sg('avg','Ø Puls')}${sg('eff','Schläge/km')}${sg('kcal','Kalorien')}${sg('rec','Erholung')}</div>
+    ${chartHtml(keys,label,few,SER,'hrc')}
+    <p class="note">${noteT}</p></div>
   ${top.length?`<div><h3>Härteste Touren</h3><ul class="hrtop">${top.map(([a,l])=>`<li data-tour="${esc(a.id)}"><b>${esc(a.n||typeLabel(a.t))}</b><span>${fmtDate(a.d)} · Ø ${a.hrA} bpm · Belastung ${fmt0.format(l)}</span></li>`).join('')}</ul></div>`:''}`;
 }
 $('#stats').addEventListener('click',e=>{
-  const b=e.target.closest('#sP button'); if(b){ stt.p=b.dataset.p; renderStats(); return; }
+  const b=e.target.closest('#sP button'); if(b){ stt.ps=toggleIn(stt.ps,b.dataset.p); ls.set('chartP',stt.ps); renderStats(); return; }
+  const m=e.target.closest('.ch-mode button'); if(m){ stt.mode=m.dataset.mode; ls.set('chartMode',stt.mode); renderStats(); return; }
   const li=e.target.closest('li[data-tour]'); if(li) openTour(li.dataset.tour);
 });
 
@@ -1412,7 +1474,7 @@ $('#stats').addEventListener('change',e=>{
   if(e.target.id==='sY'){ stt.y=e.target.value; stt.m='all'; renderStats(); }
   else if(e.target.id==='sM'){ stt.m=e.target.value; renderStats(); }
 });
-$('#stats').addEventListener('click',e=>{ const b=e.target.closest('#sK button'); if(b){ stt.k=b.dataset.k; renderStats(); } });
+$('#stats').addEventListener('click',e=>{ const b=e.target.closest('#sK button'); if(b){ stt.ks=toggleIn(stt.ks,b.dataset.k); ls.set('chartK',stt.ks); renderStats(); } });
 $('#stats').addEventListener('click',e=>{
   const li=e.target.closest('li[data-poi]'); if(!li) return; const p=S.pois.get(li.dataset.poi); if(!p) return;
   if(window.innerWidth<900) sheet.classList.remove('open');
