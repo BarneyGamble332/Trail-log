@@ -322,7 +322,7 @@ canvas.prof{width:100%;height:120px;display:block;touch-action:none;cursor:cross
 .prof-cur{position:absolute;top:0;bottom:16px;width:0;border-left:2px solid #ff8f00;pointer-events:none}
 .prof-cur i{position:absolute;left:-6px;width:10px;height:10px;margin-top:-5px;border-radius:50%;background:#ff8f00;border:2px solid #fff}
 .prof-tip{position:absolute;top:-20px;white-space:nowrap;font:600 11px var(--f-num);background:var(--ink);color:var(--bg);padding:2px 7px;border-radius:6px;pointer-events:none;z-index:2}
-#sheet.open.scrub .panes{max-height:200px}
+#sheet.open.scrub .panes{max-height:200px;transition:none}
 .sync-pc{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;align-items:baseline;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--bg)}
 .sync-pc span{font:600 12px var(--f-body);color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
 .sync-pc b{font:600 22px/1.2 var(--f-num);color:var(--ink)}
@@ -1309,10 +1309,10 @@ function renderStats(){
     <div class="tiles">
       <div class="tile"><div class="v">${fmt0.format(f.length)}</div><div class="l">Touren</div></div>
       <div class="tile"><div class="v">${fmt0.format(dist/1000)}<small>km</small></div><div class="l">Strecke</div></div>
-      <div class="tile"><div class="v">${fmt0.format(gain)}<small>Hm</small></div><div class="l">Aufstieg</div></div>
+      <div class="tile"><div class="v">${fmt0.format(gain)}<small>Hm</small></div><div class="l">Höhe</div></div>
       <div class="tile"><div class="v">${fmt0.format(mv/3600)}<small>h</small></div><div class="l">Bewegungszeit</div></div>
     </div>
-    <div class="chart-sec"><div class="ch-h"><h3>${nm} pro ${per}</h3>${chModeHtml()}</div><div class="seg mt multi" id="sK">${sg('d','Strecke')}${sg('up','Aufstieg')}${sg('mv','Zeit')}</div>
+    <div class="chart-sec"><div class="ch-h"><h3>${nm} pro ${per}</h3>${chModeHtml()}</div><div class="seg mt multi" id="sK">${sg('d','Strecke')}${sg('up','Höhe')}${sg('mv','Zeit')}</div>
       ${f.length?chartHtml(keys,label,few,SER):'<p class="empty" style="margin-top:12px">Keine Touren in diesem Zeitraum.</p>'}</div>
     ${hardHtml(f)}
     ${hrStatsHtml(f,keys,key,label,per,few)}
@@ -2252,8 +2252,10 @@ function profSmall(on){ if(on&&TRIM.id) return;
   if(!on){ sheet.classList.remove('scrub'); return; }
   if(window.innerWidth>=900||sheet.classList.contains('scrub')) return;
   sheet.classList.add('scrub');
-  const pn=$('.panes'), bx=$('#profBox'); if(pn&&bx) pn.scrollTop+=bx.getBoundingClientRect().top-pn.getBoundingClientRect().top-6;
-  setTimeout(()=>{ map.invalidateSize(); const P=$('#prof')?._P; if(P&&P.a.bb) map.fitBounds([[P.a.bb[0],P.a.bb[1]],[P.a.bb[2],P.a.bb[3]]],{paddingTopLeft:[24,70],paddingBottomRight:[24,sheet.offsetHeight+20],maxZoom:16,animate:false}); profKeep(); },280);
+  // Profil oben in den kleinen Bereich holen – nochmal nachdem die Höhe umgestellt ist (sonst bleibt es z. B. bei der Kalorien-Kachel hängen)
+  const align=()=>{ const pn=$('.panes'), bx=$('#profBox'); if(pn&&bx) pn.scrollTop+=bx.getBoundingClientRect().top-pn.getBoundingClientRect().top-6; };
+  align(); requestAnimationFrame(align);
+  setTimeout(()=>{ align(); map.invalidateSize(); const P=$('#prof')?._P; if(P&&P.a.bb) map.fitBounds([[P.a.bb[0],P.a.bb[1]],[P.a.bb[2],P.a.bb[3]]],{paddingTopLeft:[24,70],paddingBottomRight:[24,sheet.offsetHeight+20],maxZoom:16,animate:false}); profKeep(); },280);
 }
 function profKeep(){
   const l=profMk.getLayers()[0]; if(!l||window.innerWidth>=900) return;
