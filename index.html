@@ -491,6 +491,7 @@ canvas.prof{width:100%;height:120px;display:block;touch-action:none;cursor:cross
           <button class="btn primary" id="btnSync">Jetzt abgleichen</button>
         </div>
         <div class="sync-pc" id="syncPcCard" hidden><span>Adresse</span><b id="syncPcIp">…</b><span>Code</span><b id="syncPcCode">…</b></div>
+        <button class="btn primary" id="btnSyncPc" hidden>Abgleich starten</button>
         <p class="note" id="syncState" hidden></p>
         <p class="note" id="syncHelp"></p>
       </div>
@@ -2488,27 +2489,38 @@ async function syncRun(){
   }catch(e){
     const m=String(e&&e.message||e);
     syncState(m==='code'?'Der Code passt nicht. Er steht am PC unter Einstellungen › Mit Handy abgleichen.':
-      /timeout|timed out|connect|refused|unreachable|failed|network/i.test(m)?'PC nicht erreichbar. Läuft Trail Log am PC, und sind beide im selben WLAN? Adresse prüfen.':'Abgleich abgebrochen: '+m.slice(0,120));
+      /timeout|timed out|connect|refused|unreachable|failed|network/i.test(m)?'PC nicht erreichbar. Am PC unter Einstellungen › Mit Handy abgleichen „Abgleich starten“ drücken (gilt 2 Minuten), beide im selben WLAN, Adresse prüfen.':'Abgleich abgebrochen: '+m.slice(0,120));
   }finally{ btn.disabled=false; }
 }
 if(window.desktop&&desktop.onSync){ // Linux-Version: wartet auf das Handy
   $('#syncBox').hidden=false; $('#syncH').textContent='Mit Handy abgleichen'; $('#syncPcCard').hidden=false;
-  $('#syncHelp').textContent='In der Handy-App unter Einstellungen › Mit PC abgleichen Adresse und Code eintragen, dann „Jetzt abgleichen“. Beide müssen im selben WLAN sein. Neue Touren gehen in beide Richtungen, gelöscht wird nichts.';
-  desktop.syncInfo().then(i=>{ $('#syncPcIp').textContent=i.ips.length?i.ips.join(', '):'kein Netzwerk'; $('#syncPcCode').textContent=i.code;
-    if(!i.ok) syncState('Der Abgleich konnte nicht starten (Port '+SYNC_PORT+' belegt?).'); else if(ls.get('syncLast')) syncState(ls.get('syncLast')); });
+  $('#syncHelp').textContent='Erst hier „Abgleich starten“ drücken – der PC wartet dann 2 Minuten auf das Handy. In der Handy-App unter Einstellungen › Mit PC abgleichen Adresse und Code eintragen, dann „Jetzt abgleichen“. Beide müssen im selben WLAN sein. Neue Touren gehen in beide Richtungen, gelöscht wird nichts.';
+  const bp=$('#btnSyncPc'); bp.hidden=false; let tick=null, until=0, busy=false;
+  const showPc=st=>{
+    until=st.open?st.until:0; clearInterval(tick);
+    bp.textContent=until?'Abgleich beenden':'Abgleich starten'; bp.classList.toggle('primary',!until);
+    if(st.err){ syncState('Der Abgleich konnte nicht starten: '+st.err); return; }
+    if(!until){ busy=false; syncState(ls.get('syncLast')||''); return; }
+    const upd=()=>{ if(busy) return; const r=Math.max(0,Math.ceil((until-Date.now())/1000));
+      syncState(`Bereit – jetzt am Handy „Jetzt abgleichen“ tippen · noch ${Math.floor(r/60)}:${String(r%60).padStart(2,'0')}`); };
+    upd(); tick=setInterval(upd,1000);
+  };
+  desktop.onSyncStatus(showPc);
+  bp.onclick=()=>{ until?desktop.syncStop():desktop.syncStart(); };
+  desktop.syncInfo().then(i=>{ $('#syncPcIp').textContent=i.ips.length?i.ips.join(', '):'kein Netzwerk'; $('#syncPcCode').textContent=i.code; showPc(i); });
   let inc=0;
   desktop.onSync(async(op,data)=>{
-    if(op==='list') return {acts:S.acts.map(a=>[a.id,a.d,a.dist])};
+    if(op==='list'){ busy=true; syncState('Handy ist verbunden …'); } if(op==='list') return {acts:S.acts.map(a=>[a.id,a.d,a.dist])};
     if(op==='get'){ const ids=new Set(Array.isArray(data.ids)?data.ids:[]); return {acts:S.acts.filter(a=>ids.has(a.id)).map(actToJSON)}; }
     if(op==='put'){ const m=await mergeActs((Array.isArray(data.acts)?data.acts:[]).map(actFromJSON)); inc+=m.fresh.length; syncState(`Empfange Touren vom Handy … ${inc}`); return {added:m.fresh.length,dup:m.dup}; }
-    if(op==='done'){ const t=`Abgeglichen um ${hhmm()} · ${+data.sent||0} vom Handy, ${+data.got||0} ans Handy`; inc=0; ls.set('syncLast',t); syncState(t);
+    if(op==='done'){ const t=`Abgeglichen um ${hhmm()} · ${+data.sent||0} vom Handy, ${+data.got||0} ans Handy`; inc=0; busy=false; until=0; clearInterval(tick); ls.set('syncLast',t); syncState(t);
       if(+data.sent) { fitActs(); toast(`${data.sent} neue Touren vom Handy`,5000); } return {ok:true}; }
     throw new Error('unbekannt');
   });
 } else if(NATIVE){
   $('#syncBox').hidden=false; $('#syncPhone').hidden=false;
   const st=ls.get('syncPc',{}); $('#syncHost').value=st.host||''; $('#syncCode').value=st.code||'';
-  $('#syncHelp').textContent='Trail Log am PC öffnen, beide im selben WLAN. Adresse und Code stehen am PC unter Einstellungen › Mit Handy abgleichen. Neue Touren gehen in beide Richtungen, gelöscht wird nichts.';
+  $('#syncHelp').textContent='Am PC unter Einstellungen › Mit Handy abgleichen „Abgleich starten“ drücken, dann hier „Jetzt abgleichen“. Beide im selben WLAN. Adresse und Code stehen dort am PC. Neue Touren gehen in beide Richtungen, gelöscht wird nichts.';
   if(ls.get('syncLast')) syncState(ls.get('syncLast'));
   $('#btnSync').onclick=syncRun;
 }

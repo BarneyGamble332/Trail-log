@@ -70,7 +70,7 @@ ipcMain.handle('openPath', (e, p) => (typeof p === 'string' ? shell.showItemInFo
    Das Handy schickt POST /tl/list|get|put|done mit dem Code im Kopf "X-Code".
    Die Touren liegen in der Oberfläche (IndexedDB), deshalb wird jede Anfrage dorthin weitergereicht. */
 const SYNC_PORT = 8787;
-let syncOk = false, rid = 0, fails = [];
+let rid = 0, fails = [];
 const pending = new Map();
 function syncCode() {
   const s = readJSON('settings.json', {});
@@ -91,10 +91,30 @@ function ask(op, data) {
   });
 }
 ipcMain.on('sync-res', (e, { rid: id, ok, r }) => { const p = pending.get(id); if (!p) return; pending.delete(id); ok ? p.res(r) : p.rej(new Error(r)); });
-ipcMain.handle('syncInfo', async () => {
-  const ok = syncOk || await Promise.race([listening, new Promise(r => setTimeout(() => r(false), 3000))]);
-  return { ips: ips(), code: syncCode(), port: SYNC_PORT, ok };
-});
+ipcMain.handle('syncInfo', () => ({ ips: ips(), code: syncCode(), port: SYNC_PORT, open: server.listening, until: openUntil }));
+
+/* Der PC nimmt nur Verbindungen an, nachdem am PC „Abgleich starten“ gedrückt wurde – 2 Minuten lang.
+   Läuft gerade eine Übertragung, verlängert jede Anfrage um 30 s; nach „fertig“ schließt er gleich. */
+const OPEN_MS = 120000;
+let openUntil = 0, closeTimer = null;
+function status(err) { if (win && !win.isDestroyed()) win.webContents.send('sync-status', { open: server.listening, until: openUntil, err: err || '' }); }
+function armClose() {
+  clearTimeout(closeTimer);
+  closeTimer = setTimeout(() => syncStop(), Math.max(0, openUntil - Date.now()));
+}
+function syncStop() {
+  clearTimeout(closeTimer); openUntil = 0;
+  if (server.listening) { server.close(() => status()); server.closeAllConnections(); } else status();
+}
+ipcMain.handle('syncStart', () => new Promise(resolve => {
+  openUntil = Date.now() + OPEN_MS; armClose();
+  if (server.listening) { status(); return resolve({ ok: true, until: openUntil }); }
+  const onErr = err => { server.off('listening', onOk); openUntil = 0; clearTimeout(closeTimer); status(err.code === 'EADDRINUSE' ? 'Port ' + SYNC_PORT + ' ist belegt.' : err.message); resolve({ ok: false, err: err.message }); };
+  const onOk = () => { server.off('error', onErr); status(); resolve({ ok: true, until: openUntil }); };
+  server.once('error', onErr); server.once('listening', onOk);
+  server.listen(SYNC_PORT, '0.0.0.0');
+}));
+ipcMain.handle('syncStop', () => { syncStop(); return true; });
 
 const server = http.createServer((req, res) => {
   const send = (c, o) => { res.writeHead(c, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)); };
@@ -108,12 +128,10 @@ const server = http.createServer((req, res) => {
   req.on('end', async () => {
     let data = {};
     try { data = chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {}; } catch { return send(400, { error: 'json' }); }
+    openUntil = Math.max(openUntil, Date.now() + 30000); armClose();
     try { send(200, await ask(m[1], data)); } catch (err) { send(500, { error: String(err.message || err) }); }
+    if (m[1] === 'done') { openUntil = Date.now() + 1500; armClose(); }
   });
 });
-const listening = new Promise(r => {
-  server.on('error', err => { syncOk = false; console.warn('Abgleich:', err.message); r(false); });
-  server.on('listening', () => { syncOk = true; r(true); });
-});
-app.whenReady().then(() => server.listen(SYNC_PORT, '0.0.0.0'));
-app.on('will-quit', () => server.close());
+server.on('error', err => console.warn('Abgleich:', err.message));
+app.on('will-quit', () => { if (server.listening) { server.close(); server.closeAllConnections(); } });
