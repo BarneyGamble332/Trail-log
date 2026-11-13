@@ -170,6 +170,21 @@ details summary{cursor:pointer;font-weight:600;padding:4px 0}
 .btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;border:1px solid var(--line);background:var(--chip);border-radius:10px;padding:12px 14px;font-weight:600;cursor:pointer;text-align:center}
 .btn.primary{background:var(--sign);color:var(--sign-ink);border-color:transparent;font:700 17px/1 var(--f-display);letter-spacing:.06em;text-transform:uppercase;padding:15px}
 .btn.danger{color:var(--peak-hit)}
+.trim{border:1px solid var(--line);border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:10px}
+.trim .dual{position:relative;height:30px}
+.trim .dual input{position:absolute;inset:0;width:100%;margin:0;background:none;pointer-events:none;-webkit-appearance:none;appearance:none;height:30px}
+.trim .dual input::-webkit-slider-thumb{pointer-events:auto;-webkit-appearance:none;width:26px;height:26px;border-radius:50%;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35);cursor:pointer}
+.trim .dual input::-moz-range-thumb{pointer-events:auto;width:22px;height:22px;border-radius:50%;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35);cursor:pointer}
+.trim .dual #trA::-webkit-slider-thumb{background:#2f7a4b}.trim .dual #trA::-moz-range-thumb{background:#2f7a4b}
+.trim .dual #trB::-webkit-slider-thumb{background:#1c2227}.trim .dual #trB::-moz-range-thumb{background:#1c2227}
+.trim .dual .rail{position:absolute;left:13px;right:13px;top:13px;height:4px;border-radius:2px;background:var(--line)}
+.trim .dual .rail b{position:absolute;top:0;bottom:0;background:var(--sign);border-radius:2px}
+.trim .ends{display:flex;justify-content:space-between;gap:10px;font:500 12px/1.35 var(--f-num);color:var(--muted)}
+.trim .ends b{display:block;color:var(--ink);font-weight:600}
+.trim .ends span:last-child{text-align:right}
+.trim .now{font:600 15px/1.3 var(--f-body)}
+.trim .now small{display:block;font:400 12px var(--f-body);color:var(--muted);margin-top:2px}
+.trim .row2 .btn{flex:1}
 .btn.armed{background:var(--peak-hit);color:#fff;border-color:transparent}
 .btn:disabled{opacity:.5;cursor:default}
 .stack{display:flex;flex-direction:column;gap:8px}
@@ -2077,12 +2092,80 @@ function renderDetail(a){
     ${phStrip(a)}
     <div id="profBox"><h3>${a.hr?'Höhe und Puls':'Höhenprofil'}</h3><div class="profw"><div class="prof-tip" id="profTip" hidden></div><canvas id="prof" class="prof"></canvas><button class="prof-zoom" id="profZoom" hidden>Ganze Tour</button><div class="prof-cur" id="profCur" hidden><i id="profDot"></i></div></div>
       <p class="note" id="profNote" hidden></p></div>
+    ${TRIM.id===a.id?trimHtml(a):''}
     ${hrZonesHtml(a)}
-    <button class="btn" id="tFit">Auf Karte zeigen</button>
+    ${TRIM.id===a.id?'':`<button class="btn" id="tFit">Auf Karte zeigen</button>
+    <button class="btn" id="tTrim">Tour zuschneiden</button>`}
     <button class="btn danger" id="tDel">Tour löschen</button>
     <button class="btn" id="tGpx">Als GPX exportieren</button>`;
-  drawProfile($('#prof'),a); profBind(); profHide(); phFill(el);
+  drawProfile($('#prof'),a); profBind(); profHide(); phFill(el); if(TRIM.id===a.id) trimBind(a);
 }
+/* ---------- Tour zuschneiden: Anfang und Ende wählen, der Rest wird endgültig gelöscht. ed = Zeitpunkt der Änderung (für den Abgleich) ---------- */
+const TRIM={id:null,i0:0,i1:0};
+const trimN=a=>a.c.length/2;
+/* Laufmeter je gespeichertem Punkt (wie im Höhenprofil) */
+function trimX(a){ const c=a.c, n=trimN(a), X=new Float64Array(n); let d=0;
+  for(let i=1;i<n;i++){ const s=Math.hypot((c[2*i+1]-c[2*i-1])*Math.cos(c[2*i]*D2R)*111320,(c[2*i]-c[2*i-2])*110540); if(s<GAP_M) d+=s; X[i]=d; } return X; }
+function trimGain(e,i0,i1){ let g=0,ref=null; for(let i=i0;i<=i1;i++){ const v=e[i]; if(!isFinite(v)) continue; if(ref===null) ref=v; else if(v-ref>4){ g+=v-ref; ref=v; } else if(ref-v>4) ref=v; } return g; }
+function trimMove(a,X,i0,i1){ if(!a.ts) return 0; let m=0; for(let i=i0+1;i<=i1;i++){ const dt=a.ts[i]-a.ts[i-1], dd=X[i]-X[i-1]; if(dt>0&&dt<120&&dd/dt>0.5) m+=dt; } return m; }
+/* Werte des Ausschnitts i0..i1: Strecke, Hm und Bewegungszeit anteilig zur Gesamttour, damit sie zu den bisherigen Zahlen passen */
+function trimCalc(a,i0,i1){
+  const X=a._trX||(a._trX=trimX(a)), n=trimN(a), all=X[n-1]||1, f=(X[i1]-X[i0])/all;
+  const gA=a.e?trimGain(a.e,0,n-1):0, gR=a.e?trimGain(a.e,i0,i1):0;
+  const mA=trimMove(a,X,0,n-1), mR=trimMove(a,X,i0,i1);
+  const dur=a.ts?a.ts[i1]-a.ts[i0]:a.dur*f;
+  return {dist:a.dist*f, gain:gA>0?a.gain*gR/gA:a.gain*f, dur, mv:mA>0?moving(a)*mR/mA:moving(a)*f, km0:X[i0], km1:X[i1]};
+}
+function trimHtml(a){
+  const n=trimN(a), last=n-1;
+  return `<div class="trim" id="trimBox"><h3 style="margin:0">Tour zuschneiden</h3>
+    <p class="note" style="margin:0">Grünen Punkt auf den neuen Anfang, schwarzen auf das neue Ende schieben – oder ins Höhenprofil tippen, dann springt der nähere Punkt dorthin.</p>
+    <div class="dual"><div class="rail"><b id="trRail"></b></div><input type="range" id="trA" min="0" max="${last}" step="1" value="${TRIM.i0}" aria-label="Neuer Anfang"><input type="range" id="trB" min="0" max="${last}" step="1" value="${TRIM.i1}" aria-label="Neues Ende"></div>
+    <div class="ends"><span id="trE0"></span><span id="trE1"></span></div>
+    <div class="now" id="trNow"></div>
+    <p class="note" style="margin:0"><b>Achtung:</b> Das Zuschneiden ist endgültig – der abgeschnittene Teil wird gelöscht und lässt sich nicht wiederherstellen. Beim nächsten Abgleich wird die Tour auch am PC gekürzt.</p>
+    <div class="row2"><button class="btn" id="trCancel">Abbrechen</button><button class="btn primary" id="trOk">Zuschneiden</button></div></div>`;
+}
+function trimUpdate(a){
+  const n=trimN(a), {i0,i1}=TRIM, r=trimCalc(a,i0,i1), t=i=>a.ts?fmtTime(a.d+a.ts[i]*1000):'';
+  const rl=$('#trRail'); if(rl){ rl.style.left=(i0/(n-1)*100)+'%'; rl.style.right=(100-i1/(n-1)*100)+'%'; }
+  $('#trE0').innerHTML=`<b>Anfang</b>${fmt1.format(r.km0/1000)} km${a.ts?' · '+t(i0):''}`;
+  $('#trE1').innerHTML=`<b>Ende</b>${fmt1.format(r.km1/1000)} km${a.ts?' · '+t(i1):''}`;
+  const cut=i0>0||i1<n-1; const ok=$('#trOk'); if(ok.classList.contains('armed')){ ok.classList.remove('armed'); ok.textContent='Zuschneiden'; }
+  $('#trNow').innerHTML=`${fmt1.format(r.dist/1000)} km · ${fmt0.format(r.gain)} Hm · ${fmtDur(r.mv)}<small>${cut?`vorher ${fmt1.format(a.dist/1000)} km · ${fmt0.format(a.gain)} Hm · ${fmtDur(moving(a))}`:'Noch nichts abgeschnitten.'}</small>`;
+  ok.disabled=!cut || i1-i0<2;
+  const cv=$('#prof'); if(cv&&cv._P){ cv._P.trim=[i0,i1]; profRender(cv); }
+  showSel(a,[i0,i1],true);
+}
+function trimBind(a){
+  const A=$('#trA'), B=$('#trB'), n=trimN(a);
+  A.oninput=()=>{ TRIM.i0=Math.min(+A.value,TRIM.i1-2); A.value=TRIM.i0; trimUpdate(a); };
+  B.oninput=()=>{ TRIM.i1=Math.max(+B.value,TRIM.i0+2); B.value=TRIM.i1; trimUpdate(a); };
+  $('#trCancel').onclick=()=>{ TRIM.id=null; renderDetail(a); showSel(a); };
+  const ok=$('#trOk'); let arm=null;
+  ok.onclick=()=>{ if(!arm){ ok.textContent='Wirklich? Nochmal tippen'; ok.classList.add('armed'); arm=setTimeout(()=>{ arm=null; ok.textContent='Zuschneiden'; ok.classList.remove('armed'); },4000); return; }
+    clearTimeout(arm); trimApply(a); };
+  trimUpdate(a);
+}
+/* Tipp ins Profil im Zuschneide-Modus: näherer Griff springt auf diesen Punkt */
+function trimAt(a,i){
+  if(TRIM.id!==a.id) return false;
+  if(Math.abs(i-TRIM.i0)<=Math.abs(i-TRIM.i1)) TRIM.i0=Math.min(i,TRIM.i1-2); else TRIM.i1=Math.max(i,TRIM.i0+2);
+  $('#trA').value=TRIM.i0; $('#trB').value=TRIM.i1; trimUpdate(a); return true;
+}
+async function trimApply(a){
+  const {i0,i1}=TRIM, r=trimCalc(a,i0,i1);
+  const sl=(arr,k)=>arr?arr.slice(i0*k,(i1+1)*k):arr;
+  const c=sl(a.c,2), off=a.ts?a.ts[i0]:0;
+  let s=90,w=180,nn=-90,e=-180; for(let i=0;i<c.length;i+=2){ if(c[i]<s)s=c[i]; if(c[i]>nn)nn=c[i]; if(c[i+1]<w)w=c[i+1]; if(c[i+1]>e)e=c[i+1]; }
+  const hr=sl(a.hr,1);
+  Object.assign(a,{c, e:sl(a.e,1), ts:a.ts?Float64Array.from(sl(a.ts,1),v=>v-off):a.ts, d:a.d+off*1000,
+    dist:r.dist, gain:r.gain, dur:r.dur, mv:r.mv, bb:[s,w,nn,e], ed:Date.now()});
+  if(hr){ let S0=0,N=0,M=0; hr.forEach(v=>{ if(v>0){ S0+=v; N++; if(v>M) M=v; } }); a.hr=hr; if(N){ a.hrA=Math.round(S0/N); a.hrM=M; } else { delete a.hr; delete a.hrA; delete a.hrM; } }
+  delete a._pk; delete a._trX; GEO.delete(a);
+  await idb.put('acts',a).catch(()=>{}); TRIM.id=null; actsChanged(); renderDetail(a); showSel(a); toast('Tour zugeschnitten.');
+}
+
 function drawProfile(cv,a){
   if(!cv) return; const note=$('#profNote'), w=cv.clientWidth, h=cv.clientHeight; if(!w) return;
   const msg=t=>{ cv.hidden=true; note.hidden=false; note.textContent=t; };
@@ -2133,6 +2216,10 @@ function profRender(cv){
     const tw=g.measureText(q.name).width; if(placed.some(v=>Math.abs(v-x)<(tw/2+30))) continue; placed.push(x);
     const tx=Math.min(w-tw/2-2,Math.max(tw/2+2,x)), ty=Math.max(22,y-14);
     g.lineWidth=3; g.strokeStyle=cssVar('--bg'); g.strokeText(q.name,tx,ty); g.fillStyle='#6b3a1e'; g.fillText(q.name,tx,ty); }
+  if(P.trim&&TRIM.id===a.id){ const [t0,t1]=P.trim;
+    g.fillStyle=cssVar('--bg'); g.globalAlpha=.72;
+    if(t0>i0) g.fillRect(0,0,px(Math.max(t0,i0)),h); if(t1<i1) g.fillRect(px(Math.min(t1,i1)),0,w-px(Math.min(t1,i1)),h); g.globalAlpha=1;
+    [[t0,'#2f7a4b'],[t1,'#1c2227']].forEach(([i,col])=>{ if(i<i0||i>i1) return; const x=px(i); g.fillStyle=col; g.fillRect(x-1.5,0,3,base); g.beginPath(); g.arc(x,base,6,0,Math.PI*2); g.fill(); }); }
   g.restore();
   const zb=$('#profZoom'); if(zb) zb.hidden=!(v0>1||v1<P.D-1);
 }
@@ -2161,7 +2248,7 @@ function profAt(f){
 }
 function profHide(){ profMk.clearLayers(); profSmall(false); const c=$('#profCur'), t=$('#profTip'); if(c) c.hidden=true; if(t) t.hidden=true; }
 /* Beim Fahren durchs Profil wird das Blatt flach, damit mehr Karte zu sehen ist */
-function profSmall(on){
+function profSmall(on){ if(on&&TRIM.id) return;
   if(!on){ sheet.classList.remove('scrub'); return; }
   if(window.innerWidth>=900||sheet.classList.contains('scrub')) return;
   sheet.classList.add('scrub');
@@ -2183,20 +2270,26 @@ function profBind(){
     pinch={d:Math.max(20,Math.abs(p.x-q.x)), span:P.v1-P.v0, at:P.v0+frac(cx)*(P.v1-P.v0)}; profMk.clearLayers(); $('#profCur').hidden=true; $('#profTip').hidden=true; };
   cv.addEventListener('pointerdown',e=>{ try{ cv.setPointerCapture(e.pointerId); }catch(_){} pts.set(e.pointerId,{x:e.clientX}); profSmall(true);
     if(pts.size===2){ pinchStart(); return; }
+    if(TRIM.id&&cv._P&&TRIM.id===cv._P.a.id){ const P=cv._P, tgt=P.v0+frac(e.clientX)*(P.v1-P.v0); let k=0; while(k<P.n-1&&P.X[k+1]<=tgt) k++; trimAt(P.a,k); return; }
     const now=Date.now(); if(now-lastTap<300&&cv._P){ setWin(0,cv._P.D); } lastTap=now; scrub(e.clientX); });
   cv.addEventListener('pointermove',e=>{ if(!pts.has(e.pointerId)) return; pts.get(e.pointerId).x=e.clientX;
     if(pinch&&pts.size>=2){ const [p,q]=[...pts.values()], span=pinch.span*pinch.d/Math.max(20,Math.abs(p.x-q.x)), cx=(p.x+q.x)/2;
       const P=cv._P, minS=Math.min(P.D,150), sp=Math.min(P.D,Math.max(minS,span)); setWin(pinch.at-frac(cx)*sp,sp); return; }
+    if(TRIM.id&&cv._P&&TRIM.id===cv._P.a.id){ if(!pinch){ const P=cv._P, tgt=P.v0+frac(e.clientX)*(P.v1-P.v0); let k=0; while(k<P.n-1&&P.X[k+1]<=tgt) k++; trimAt(P.a,k); } return; }
     if(!pinch) scrub(e.clientX); });
   const up=e=>{ pts.delete(e.pointerId); if(pts.size<2&&pinch){ pinch=null; const r=[...pts.values()][0]; if(r) scrub(r.x); } };
   cv.addEventListener('pointerup',up); cv.addEventListener('pointercancel',up);
   const zb=$('#profZoom'); if(zb) zb.onclick=()=>{ const P=cv._P; if(P){ P.v0=0; P.v1=P.D; profRender(cv); } };
 }
 /* ---------- Auswahl auf der Karte ---------- */
-function showSel(a){
+function showSel(a,rg,keepView){
   selLayer.clearLayers();
-  const c=a.c, parts=[]; let cur=[];
-  for(let i=0;i<c.length;i+=2){
+  const c=a.c, parts=[], gone=[]; let cur=[], g=[];
+  if(rg){ const o={pane:'route',interactive:false,lineJoin:'round',lineCap:'round'};
+    const part=(from,to)=>{ const q=[]; for(let i=from;i<=to;i++) q.push([c[2*i],c[2*i+1]]); return q; };
+    if(rg[0]>0) gone.push(part(0,rg[0])); if(rg[1]<c.length/2-1) gone.push(part(rg[1],c.length/2-1));
+    gone.forEach(p=>L.polyline(p,{...o,color:'#7d8288',weight:4,opacity:.8,dashArray:'6 7'}).addTo(selLayer)); }
+  for(let i=(rg?rg[0]:0)*2;i<(rg?rg[1]*2+2:c.length);i+=2){
     if(i>0&&((c[i+1]-c[i-1])*Math.cos(c[i]*D2R)*111320)**2+((c[i]-c[i-2])*110540)**2>GAP_M*GAP_M){ if(cur.length>1) parts.push(cur); cur=[]; }
     cur.push([c[i],c[i+1]]);
   }
@@ -2205,8 +2298,9 @@ function showSel(a){
   parts.forEach(p=>L.polyline(p,{...o,color:'#fff',weight:8,opacity:.95}).addTo(selLayer));
   parts.forEach(p=>L.polyline(p,{...o,color:'#1b7fe8',weight:4}).addTo(selLayer));
   const dot=(ll,col)=>L.circleMarker(ll,{pane:'route',interactive:false,radius:7,color:'#fff',weight:3,fillColor:col,fillOpacity:1}).addTo(selLayer);
-  dot([c[0],c[1]],'#2f7a4b'); dot([c[c.length-2],c[c.length-1]],'#1c2227');
-  fitSel(a);
+  const j0=rg?rg[0]*2:0, j1=rg?rg[1]*2:c.length-2;
+  dot([c[j0],c[j0+1]],'#2f7a4b'); dot([c[j1],c[j1+1]],'#1c2227');
+  if(!keepView) fitSel(a);
 }
 function fitSel(a){
   const mob=window.innerWidth<900, open=sheet.classList.contains('open');
@@ -2215,7 +2309,7 @@ function fitSel(a){
 }
 function openTour(id){
   const a=byId.get(id); if(!a) return;
-  TOUR.sel=id; PH.allStrip=false; map.closePopup(); openTab('tours'); sheet.classList.add('open');
+  if(TRIM.id!==id) TRIM.id=null; TOUR.sel=id; PH.allStrip=false; map.closePopup(); openTab('tours'); sheet.classList.add('open');
   renderTours(); const p=$('.panes'); if(p) p.scrollTop=0; showSel(a); renderPhotos();
 }
 /* Einzelne Tour als GPX: gespeicherter (vereinfachter) Verlauf mit Höhen, Startzeit in den Metadaten.
@@ -2260,10 +2354,11 @@ async function armDelete(b){
 $('#tours').addEventListener('click',e=>{
   const li=e.target.closest('li[data-act]'); if(li){ openTour(li.dataset.act); return; }
   const b=e.target.closest('button'); if(!b) return;
-  if(b.id==='tBack'){ TOUR.sel=null; selLayer.clearLayers(); profHide(); renderTours(); renderPhotos(); }
+  if(b.id==='tBack'){ TRIM.id=null; TOUR.sel=null; selLayer.clearLayers(); profHide(); renderTours(); renderPhotos(); }
   if(b.id==='tGpx'){ exportGpx(); return; }
   else if(b.id==='tMore'){ TOUR.n+=40; renderTours(); }
   else if(b.id==='tFit'){ const a=byId.get(TOUR.sel); if(a) fitSel(a); }
+  else if(b.id==='tTrim'){ const a=byId.get(TOUR.sel); if(a){ TRIM.id=a.id; TRIM.i0=0; TRIM.i1=trimN(a)-1; renderDetail(a); const t=$('#trimBox'); if(t) t.scrollIntoView({block:'nearest',behavior:'smooth'}); } }
   else if(b.id==='tDel') armDelete(b);
 });
 /* Tour aus einem Karten-Popup antippen */
@@ -2555,13 +2650,14 @@ hrUI();
 /* ---------- Backup ---------- */
 function actToJSON(a){ return {id:a.id,n:a.n,t:a.t,d:a.d,dist:a.dist,gain:a.gain,dur:a.dur,mv:a.mv,v:a.v||1,bb:a.bb,
   c:Array.from(a.c,v=>+v.toFixed(6)), e:a.e?Array.from(a.e,v=>isFinite(v)?Math.round(v*10)/10:null):null, ts:a.ts?Array.from(a.ts):undefined,
-  hr:a.hr?Array.from(a.hr):undefined, hrA:a.hrA, hrM:a.hrM}; }
+  hr:a.hr?Array.from(a.hr):undefined, hrA:a.hrA, hrM:a.hrM, ed:a.ed||undefined}; }
 function actFromJSON(o){
   if(!o||!Array.isArray(o.c)||o.c.length<4||!o.id) return null;
   return {id:String(o.id),n:o.n||'Tour',t:o.t||'other',d:+o.d,dist:+o.dist||0,gain:+o.gain||0,dur:+o.dur||0,mv:+o.mv||+o.dur||0,v:o.v||(o.e?2:1),
     bb:o.bb,c:Float32Array.from(o.c),e:o.e?Float32Array.from(o.e,v=>v==null?NaN:v):undefined,
     ts:Array.isArray(o.ts)&&o.ts.length*2===o.c.length?Float64Array.from(o.ts):undefined,
-    ...(Array.isArray(o.hr)&&o.hr.length*2===o.c.length?{hr:Uint8Array.from(o.hr),hrA:+o.hrA||0,hrM:+o.hrM||0}:{})};
+    ...(Array.isArray(o.hr)&&o.hr.length*2===o.c.length?{hr:Uint8Array.from(o.hr),hrA:+o.hrA||0,hrM:+o.hrM||0}:{}),
+    ...(+o.ed>0?{ed:+o.ed}:{})};
 }
 /* Altes Trail-Log-Backup: p=[[lat,lon,ele|null,Strecke]], t=Start in ms, d=Meter, up=Hoehenmeter, mv/el=Sekunden */
 function actFromLegacy(o){
@@ -2573,14 +2669,17 @@ function actFromLegacy(o){
 /* Neue Touren übernehmen; gleiche Tour = gleiche Nummer oder gleicher Start (±1 min) und gleiche Strecke (±3 %) */
 const sameTour=(d1,m1,d2,m2)=>Math.abs(d1-d2)<60000&&Math.abs(m1-m2)<=0.03*Math.max(m1,1);
 async function mergeActs(arr){
-  const known=new Set(S.acts.map(a=>a.id)), fresh=[]; let dup=0;
+  const known=new Set(S.acts.map(a=>a.id)), fresh=[], upd=[]; let dup=0;
   for(const a of arr){
     if(!a||!isFinite(a.d)||!a.bb) continue;
+    const o=byId.get(a.id);
+    if(o&&(a.ed||0)>(o.ed||0)){ const i=S.acts.indexOf(o); if(i>=0){ S.acts[i]=a; upd.push(a); } continue; }
     if(known.has(a.id)||S.acts.some(b=>sameTour(b.d,b.dist,a.d,a.dist))||fresh.some(b=>sameTour(b.d,b.dist,a.d,a.dist))){ dup++; continue; }
     fresh.push(a); known.add(a.id);
   }
-  if(fresh.length){ S.acts.push(...fresh); await idb.put('acts',fresh).catch(()=>{}); actsChanged(); }
-  return {fresh,dup};
+  if(fresh.length) S.acts.push(...fresh);
+  if(fresh.length||upd.length){ await idb.put('acts',[...fresh,...upd]).catch(()=>{}); actsChanged(); }
+  return {fresh,dup,upd:upd.length};
 }
 async function importBackup(f){
   try{
@@ -2625,15 +2724,16 @@ async function syncRun(){
   try{
     syncState('Verbinde mit dem PC …');
     const L=await syncReq('list'), pc=Array.isArray(L.acts)?L.acts:[], pcIds=new Set(pc.map(x=>x[0]));
-    const send=S.acts.filter(a=>!pcIds.has(a.id)&&!pc.some(x=>sameTour(x[1],x[2],a.d,a.dist)));
-    const want=pc.filter(x=>!S.acts.some(b=>b.id===x[0]||sameTour(b.d,b.dist,x[1],x[2]))).map(x=>x[0]);
-    const B=12; let sent=0, got=0;
+    const pcEd=new Map(pc.map(x=>[x[0],+x[3]||0]));
+    const send=S.acts.filter(a=>pcIds.has(a.id)?(a.ed||0)>pcEd.get(a.id):!pc.some(x=>sameTour(x[1],x[2],a.d,a.dist)));
+    const want=pc.filter(x=>{ const o=byId.get(x[0]); return o?(+x[3]||0)>(o.ed||0):!S.acts.some(b=>sameTour(b.d,b.dist,x[1],x[2])); }).map(x=>x[0]);
+    const B=12; let sent=0, got=0, chg=0;
     for(let i=0;i<send.length;i+=B){ syncState(`Sende Touren an den PC … ${i}/${send.length}`);
-      const r=await syncReq('put',{acts:send.slice(i,i+B).map(actToJSON)}); sent+=+r.added||0; }
+      const r=await syncReq('put',{acts:send.slice(i,i+B).map(actToJSON)}); sent+=+r.added||0; chg+=+r.upd||0; }
     for(let i=0;i<want.length;i+=B){ syncState(`Hole Touren vom PC … ${i}/${want.length}`);
-      const r=await syncReq('get',{ids:want.slice(i,i+B)}); const m=await mergeActs((r.acts||[]).map(actFromJSON)); got+=m.fresh.length; }
+      const r=await syncReq('get',{ids:want.slice(i,i+B)}); const m=await mergeActs((r.acts||[]).map(actFromJSON)); got+=m.fresh.length; chg+=m.upd; }
     await syncReq('done',{sent,got}).catch(()=>{});
-    const t=`Abgeglichen um ${hhmm()} · ${sent} an den PC, ${got} vom PC`+(sent||got?'':' (alles schon gleich)');
+    const t=`Abgeglichen um ${hhmm()} · ${sent} an den PC, ${got} vom PC`+(chg?`, ${chg} zugeschnitten`:'')+(sent||got||chg?'':' (alles schon gleich)');
     ls.set('syncLast',t); syncState(t);
   }catch(e){
     const m=String(e&&e.message||e);
@@ -2659,9 +2759,9 @@ if(window.desktop&&desktop.onSync){ // Linux-Version: wartet auf das Handy
   desktop.syncInfo().then(i=>{ $('#syncPcIp').textContent=i.ips.length?i.ips.join(', '):'kein Netzwerk'; $('#syncPcCode').textContent=i.code; showPc(i); });
   let inc=0;
   desktop.onSync(async(op,data)=>{
-    if(op==='list'){ busy=true; syncState('Handy ist verbunden …'); } if(op==='list') return {acts:S.acts.map(a=>[a.id,a.d,a.dist])};
+    if(op==='list'){ busy=true; syncState('Handy ist verbunden …'); } if(op==='list') return {acts:S.acts.map(a=>[a.id,a.d,a.dist,a.ed||0])};
     if(op==='get'){ const ids=new Set(Array.isArray(data.ids)?data.ids:[]); return {acts:S.acts.filter(a=>ids.has(a.id)).map(actToJSON)}; }
-    if(op==='put'){ const m=await mergeActs((Array.isArray(data.acts)?data.acts:[]).map(actFromJSON)); inc+=m.fresh.length; syncState(`Empfange Touren vom Handy … ${inc}`); return {added:m.fresh.length,dup:m.dup}; }
+    if(op==='put'){ const m=await mergeActs((Array.isArray(data.acts)?data.acts:[]).map(actFromJSON)); inc+=m.fresh.length+m.upd; syncState(`Empfange Touren vom Handy … ${inc}`); return {added:m.fresh.length,dup:m.dup,upd:m.upd}; }
     if(op==='done'){ const t=`Abgeglichen um ${hhmm()} · ${+data.sent||0} vom Handy, ${+data.got||0} ans Handy`; inc=0; busy=false; until=0; clearInterval(tick); ls.set('syncLast',t); syncState(t);
       if(+data.sent) { fitActs(); toast(`${data.sent} neue Touren vom Handy`,5000); } return {ok:true}; }
     throw new Error('unbekannt');
