@@ -581,7 +581,7 @@ function typeLabel(k){ return TYPES[k] || (k.charAt(0).toUpperCase()+k.slice(1))
 function xmlText(s){ return (s||'').replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g,'$1').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&apos;|&#39;/g,"'").trim(); }
 
 function parseGPX(txt){
-  const lat=[],lon=[],ele=[],t=[];
+  const lat=[],lon=[],ele=[],t=[],hr=[];
   const pushPt=(attrs,body)=>{
     const la=/\blat\s*=\s*["']([^"']+)["']/.exec(attrs), lo=/\blon\s*=\s*["']([^"']+)["']/.exec(attrs);
     if(!la||!lo) return;
@@ -589,6 +589,7 @@ function parseGPX(txt){
     lat.push(a); lon.push(o);
     const e=/<(?:\w+:)?ele>([^<]+)</.exec(body||''); ele.push(e?parseFloat(e[1]):NaN);
     const tm=/<(?:\w+:)?time>([^<]+)</.exec(body||''); t.push(tm?Date.parse(tm[1]):NaN);
+    const h=/<(?:\w+:)?(?:hr|heartrate)>\s*([\d.]+)\s*</i.exec(body||''); hr.push(h?+h[1]:0);
   };
   const re=/<(?:\w+:)?trkpt\b([^>]*?)>([\s\S]*?)<\/(?:\w+:)?trkpt>/g; let m;
   while((m=re.exec(txt))) pushPt(m[1],m[2]);
@@ -597,20 +598,21 @@ function parseGPX(txt){
   const scope=trk?trk[0]:txt;
   const nm=/<(?:\w+:)?name>([\s\S]*?)<\/(?:\w+:)?name>/.exec(scope);
   const ty=/<(?:\w+:)?type>([\s\S]*?)<\/(?:\w+:)?type>/.exec(scope);
-  return {lat,lon,ele,t,name:nm?xmlText(nm[1]):'',type:ty?xmlText(ty[1]):''};
+  return {lat,lon,ele,t,hr,name:nm?xmlText(nm[1]):'',type:ty?xmlText(ty[1]):''};
 }
 
 function parseTCX(txt){
-  const lat=[],lon=[],ele=[],t=[]; const re=/<Trackpoint>([\s\S]*?)<\/Trackpoint>/g; let m;
+  const lat=[],lon=[],ele=[],t=[],hr=[]; const re=/<(?:\w+:)?Trackpoint>([\s\S]*?)<\/(?:\w+:)?Trackpoint>/g; let m;
   while((m=re.exec(txt))){
     const b=m[1]; const la=/<LatitudeDegrees>([^<]+)</.exec(b), lo=/<LongitudeDegrees>([^<]+)</.exec(b);
     if(!la||!lo) continue;
     lat.push(parseFloat(la[1])); lon.push(parseFloat(lo[1]));
     const e=/<AltitudeMeters>([^<]+)</.exec(b); ele.push(e?parseFloat(e[1]):NaN);
     const tm=/<Time>([^<]+)</.exec(b); t.push(tm?Date.parse(tm[1]):NaN);
+    const h=/<(?:\w+:)?HeartRateBpm[^>]*>\s*<(?:\w+:)?Value>\s*([\d.]+)/.exec(b); hr.push(h?+h[1]:0);
   }
   const sp=/<Activity\s+Sport="([^"]+)"/.exec(txt); const nm=/<Notes>([\s\S]*?)<\/Notes>/.exec(txt);
-  return {lat,lon,ele,t,name:nm?xmlText(nm[1]):'',type:sp?sp[1]:''};
+  return {lat,lon,ele,t,hr,name:nm?xmlText(nm[1]):'',type:sp?sp[1]:''};
 }
 
 const FIT_SPORT = {1:'run',2:'ride',11:'walk',17:'hike',12:'nordicski',13:'alpineski',35:'snowshoe',31:'rockclimbing',5:'swim',10:'workout'};
@@ -620,7 +622,7 @@ function parseFIT(u8){
   if(u8.byteLength<14 || String.fromCharCode(u8[8],u8[9],u8[10],u8[11])!=='.FIT') throw new Error('Keine FIT-Datei');
   const end=Math.min(hs+dv.getUint32(4,true), u8.byteLength);
   const defs=[]; let p=hs, lastTs=0, sport=null, sub=null;
-  const lat=[],lon=[],ele=[],t=[];
+  const lat=[],lon=[],ele=[],t=[],hr=[];
   const SC=180/2147483648;
   while(p<end){
     const h=dv.getUint8(p++);
@@ -637,7 +639,7 @@ function parseFIT(u8){
     else local=h&0x0F;
     const d=defs[local]; if(!d) throw new Error('FIT beschädigt');
     if(d.gnum===20 || d.gnum===18){
-      let q=p, la=null, lo=null, al=null; const F=d.fields;
+      let q=p, la=null, lo=null, al=null, hb=0; const F=d.fields;
       for(let i=0;i<F.length;i+=2){
         const num=F[i], sz=F[i+1];
         if(num===253 && sz===4){ const v=dv.getUint32(q,d.le); if(v!==0xFFFFFFFF){ ts=v; lastTs=v; } }
@@ -646,6 +648,7 @@ function parseFIT(u8){
           else if(num===1 && sz===4){ const v=dv.getInt32(q,d.le); if(v!==0x7FFFFFFF) lo=v*SC; }
           else if(num===78 && sz===4){ const v=dv.getUint32(q,d.le); if(v!==0xFFFFFFFF) al=v/5-500; }
           else if(num===2 && sz===2 && al===null){ const v=dv.getUint16(q,d.le); if(v!==0xFFFF) al=v/5-500; }
+          else if(num===3 && sz===1){ const v=dv.getUint8(q); if(v!==0xFF) hb=v; }
         } else {
           if(num===5 && sz===1){ const v=dv.getUint8(q); if(v!==0xFF) sport=v; }
           else if(num===6 && sz===1){ const v=dv.getUint8(q); if(v!==0xFF) sub=v; }
@@ -653,7 +656,7 @@ function parseFIT(u8){
         q+=sz;
       }
       if(d.gnum===20 && la!==null && lo!==null && Math.abs(la)<=90 && Math.abs(lo)<=180){
-        lat.push(la); lon.push(lo); ele.push(al===null?NaN:al); t.push(ts===null?NaN:(ts+FIT_EPOCH)*1000);
+        lat.push(la); lon.push(lo); ele.push(al===null?NaN:al); t.push(ts===null?NaN:(ts+FIT_EPOCH)*1000); hr.push(hb);
       }
     }
     p+=d.size;
@@ -662,7 +665,7 @@ function parseFIT(u8){
   if(sport===2 && sub===8) type='mountainbikeride';
   if(sport===2 && sub===28) type='ebikeride';
   if(sport===13 && sub===37) type='backcountryski';
-  return {lat,lon,ele,t,name:'',type};
+  return {lat,lon,ele,t,hr,name:'',type};
 }
 
 function parseCSV(txt){
@@ -746,7 +749,7 @@ function buildAct(id,trk,meta){
   const date=isFinite(t0)?t0:(isFinite(m.date)?m.date:Date.now());
   const dur=isFinite(t1-t0)?(t1-t0)/1000:0;
   return {id:String(id), n:(m.name||trk.name||'Tour').trim(), t:typeKey(m.type||trk.type), d:date,
-    dist, gain:isFinite(m.gain)?m.gain:gain, dur, mv:mv>0?mv:dur, v:3,
+    dist, gain:isFinite(m.gain)?m.gain:gain, dur, mv:mv>0?mv:dur, v:4,
     bb:[s,w,nn,e], c:new Float32Array(keep), e:new Float32Array(keepE), ts:actTimes(keepT,date),
     ...(keepH&&hN?{hr:Uint8Array.from(keepH,v=>Math.min(255,Math.max(0,Math.round(v)))),hrA:Math.round(hS/hN),hrM:hM}:{})};
 }
@@ -1447,20 +1450,23 @@ function fitActs(){
 async function importEntries(items,label){
   // items: [{name, read: async()=>Uint8Array, meta, id}]
   // Bereits bekannte Touren werden uebersprungen, ausser sie stammen aus einer aelteren Version (ohne Hoehenprofil): dann werden sie ergaenzt.
-  const known=new Map(S.acts.map(a=>[a.id,a])); let added=0, upd=0, skipped=0, failed=0, pending=[];
+  const known=new Map(S.acts.map(a=>[a.id,a])); let added=0, upd=0, hrAdd=0, skipped=0, failed=0, pending=[];
   busy.show(label);
   for(let i=0;i<items.length;i++){
     if(busy.cancel) break;
     const it=items[i];
     if(i%5===0) busy.set(i/items.length,`${i} von ${items.length} Dateien · ${added+upd} neu oder ergänzt`);
-    if(it.id){ const o=known.get(it.id); if(o&&o.v>=3&&o.ts){ skipped++; continue; } }
+    if(it.id){ const o=known.get(it.id); if(o&&o.ts&&(o.v>=4||o.hr)){ skipped++; continue; } }
     try{
       let u8=await it.read(); let name=it.name;
       if(/\.gz$/i.test(name)){ u8=await gunzip(u8); name=name.replace(/\.gz$/i,''); }
       const trk=parseTrackBytes(name,u8);
       const id=it.id||(name.replace(/\.(gpx|fit|tcx)$/i,'')+'_'+(isFinite(trk.t[0])?trk.t[0]:trk.lat.length));
-      const o=known.get(id); if(o&&o.v>=3&&o.ts){ skipped++; continue; }
+      const o=known.get(id); if(o&&o.ts&&(o.v>=4||o.hr)){ skipped++; continue; }
       const act=buildAct(id,trk,it.meta);
+      if(o&&o.v>=3&&o.ts&&act){ // schon da: nur den Puls nachtragen, eigene Änderungen bleiben
+        o.v=4; if(act.hr&&act.hr.length*2===o.c.length){ o.hr=act.hr; o.hrA=act.hrA; o.hrM=act.hrM; hrAdd++; } else skipped++;
+        pending.push(o); if(pending.length>=40){ await idb.put('acts',pending).catch(()=>{}); pending=[]; } continue; }
       if(act){ if(o){ S.acts[S.acts.indexOf(o)]=act; upd++; } else { S.acts.push(act); added++; } known.set(id,act); pending.push(act); } else skipped++;
     }catch(e){ failed++; }
     if(pending.length>=40){ await idb.put('acts',pending).catch(()=>{}); pending=[]; }
@@ -1469,7 +1475,7 @@ async function importEntries(items,label){
   busy.set(1,'Heatmap wird aufgebaut …'); await sleep(30);
   actsChanged(); busy.hide();
   if(added) fitActs();
-  toast(`${added} Touren importiert`+(upd?`, ${upd} ergänzt`:'')+(skipped?`, ${skipped} übersprungen`:'')+(failed?`, ${failed} Dateien nicht lesbar`:'')+'.',5000);
+  toast(`${added} Touren importiert`+(upd?`, ${upd} ergänzt`:'')+(hrAdd?`, bei ${hrAdd} den Puls nachgetragen`:'')+(skipped?`, ${skipped} übersprungen`:'')+(failed?`, ${failed} Dateien nicht lesbar`:'')+'.',5000);
   if(added && map.getZoom()>=11) autoPois();
 }
 
