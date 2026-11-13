@@ -88,6 +88,17 @@ button:focus-visible,input:focus-visible,label:focus-within{outline:2px solid va
   .handle{display:none}
   .summary{padding-top:16px}
   .panes,#sheet.open .panes{max-height:none;flex:1}
+  /* Statistik am großen Bildschirm: Seitenleiste legt sich über die Karte, Diagramme groß */
+  body.stats-wide #sheet{width:100%;border-left:0;transition:width .25s ease}
+  body.stats-wide #stats{display:grid;align-items:start;grid-template-columns:repeat(2,minmax(0,1fr));gap:26px 34px;max-width:1500px;width:100%;margin:0 auto}
+  body.stats-wide #stats>*{min-width:0}
+  body.stats-wide #stats>.row2{max-width:520px}
+  body.stats-wide #stats>.tiles,body.stats-wide #stats>.chart-sec{grid-column:1/-1}
+  body.stats-wide #stats>.row2{grid-column:1/-1}
+  body.stats-wide #stats>.tiles{grid-template-columns:repeat(4,1fr)}
+  body.stats-wide .chart{height:340px}
+  body.stats-wide .chart-sec .seg{max-width:620px}
+  body.stats-wide .xl span{font-size:12px}
 }
 @media (prefers-reduced-motion:reduce){.panes{transition:none}}
 
@@ -1259,7 +1270,7 @@ function renderStats(){
       <div class="tile"><div class="v">${fmt0.format(gain)}<small>Hm</small></div><div class="l">Aufstieg</div></div>
       <div class="tile"><div class="v">${fmt0.format(mv/3600)}<small>h</small></div><div class="l">Bewegungszeit</div></div>
     </div>
-    <div><div class="ch-h"><h3>${nm} pro ${per}</h3>${chModeHtml()}</div><div class="seg mt multi" id="sK">${sg('d','Strecke')}${sg('up','Aufstieg')}${sg('mv','Zeit')}</div>
+    <div class="chart-sec"><div class="ch-h"><h3>${nm} pro ${per}</h3>${chModeHtml()}</div><div class="seg mt multi" id="sK">${sg('d','Strecke')}${sg('up','Aufstieg')}${sg('mv','Zeit')}</div>
       ${f.length?chartHtml(keys,label,few,SER):'<p class="empty" style="margin-top:12px">Keine Touren in diesem Zeitraum.</p>'}</div>
     ${hardHtml(f)}
     ${hrStatsHtml(f,keys,key,label,per,few)}
@@ -1499,7 +1510,7 @@ function hrStatsHtml(f,keys,key,label,per,few){
       <div class="tile"><div class="v hrv">${gAvg('fl')}<small>bpm</small></div><div class="l">Flach</div></div>
       <div class="tile"><div class="v hrv">${gAvg('dn')}<small>bpm</small></div><div class="l">Bergab</div></div></div>
     <p class="note">Ø Puls nach Steigung, gemessen jeweils über die letzten 100 m: bergauf über 4 %, bergab unter −4 %, dazwischen flach.</p></div>
-  <div><div class="ch-h"><h3>${nm} pro ${per}</h3>${chModeHtml()}</div><div class="seg mt sp5 multi" id="sP">${sg('load','Belastung')}${sg('avg','Ø Puls')}${sg('eff','Schläge/km')}${sg('kcal','Kalorien')}${sg('rec','Erholung')}</div>
+  <div class="chart-sec"><div class="ch-h"><h3>${nm} pro ${per}</h3>${chModeHtml()}</div><div class="seg mt sp5 multi" id="sP">${sg('load','Belastung')}${sg('avg','Ø Puls')}${sg('eff','Schläge/km')}${sg('kcal','Kalorien')}${sg('rec','Erholung')}</div>
     ${chartHtml(keys,label,few,SER,'hrc')}
     <p class="note">${noteT}</p></div>
   ${top.length?`<div><h3>Härteste Touren nach Puls</h3><ul class="hrtop">${top.map(([a,l])=>`<li data-tour="${esc(a.id)}"><b>${esc(a.n||typeLabel(a.t))}</b><span>${fmtDate(a.d)} · Ø ${a.hrA} bpm · Belastung ${fmt0.format(l)}</span></li>`).join('')}</ul></div>`:''}`;
@@ -1625,6 +1636,7 @@ function openTab(name){
   document.querySelectorAll('.pane').forEach(p=>p.hidden=p.id!=='pane-'+name);
   if(changed){ const ps=$('.panes'); if(ps) ps.scrollTop=0; }   // anderer Reiter: Liste beginnt wieder oben
   ls.set('tab',name);
+  document.body.classList.toggle('stats-wide',name==='stats');
   $('#btnSet').classList.toggle('on',name==='data');
   if(name==='tours'&&typeof TOUR!=='undefined'&&TOUR.sel){ const a=byId.get(TOUR.sel); if(a) requestAnimationFrame(()=>drawProfile($('#prof'),a)); }
 }
