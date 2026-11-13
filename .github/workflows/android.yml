@@ -1411,7 +1411,9 @@ jobs:
           s=s.replace('</manifest>',perm,1)
           # Abgleich mit dem PC im Heimnetz läuft über http://<PC>:8787
           if 'usesCleartextTraffic' not in s:
-              s=s.replace('<application ','<application android:usesCleartextTraffic="true" ',1)
+              import re
+              s=re.sub(r'<application(\s)',r'<application android:usesCleartextTraffic="true"\1',s,count=1)
+          assert 'usesCleartextTraffic="true"' in s, 'cleartext fehlt im Manifest'
           if 'xmlns:tools=' not in s:
               s=s.replace('<manifest ','<manifest xmlns:tools="http://schemas.android.com/tools" ',1)
           open(m,'w').write(s)
